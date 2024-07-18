@@ -111,3 +111,77 @@ class UserRightPlanTemplateInnerSerializer(serializers.Serializer):
 
 class UserRightPlanTemplateSerializer(serializers.Serializer):
     UserRightPlanTemplate = UserRightPlanTemplateInnerSerializer()
+
+
+
+# Сериализатор для модели Region
+class RegionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Region
+        fields = ['id', 'number', 'name']
+
+# Сериализатор для модели Organization
+class OrganizationSerializer(serializers.ModelSerializer):
+    region = RegionSerializer()  # Включаем данные региона в сериализатор организации
+
+    class Meta:
+        model = Organization
+        fields = ['id', 'bin', 'number', 'name', 'region']
+
+# Сериализатор для модели User
+class UserSerializer(serializers.ModelSerializer):
+    organization = OrganizationSerializer(many=True, read_only=True)  # Включаем данные об организации
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'FIO', 'phone', 'organization', 
+            'is_active', 'is_staff', 'date_joined', 'updated_at', 'approved', 'is_verified'
+        ]
+
+# Сериализатор для создания пользователя
+class UserCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)  # Добавляем пароль для создания пользователя
+
+    class Meta:
+        model = User
+        fields = ['username', 'email', 'password', 'FIO', 'phone', 'organization']
+
+    def create(self, validated_data):
+        password = validated_data.pop('password', None)
+        user = User(**validated_data)
+        if password:
+            user.set_password(password)
+        user.save()
+        return user
+
+# Сериализатор для обновления пользователя
+class UserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['FIO', 'phone', 'is_active', 'is_staff', 'approved', 'is_verified']
+
+# Сериализатор для подробного отображения пользователя
+class UserDetailSerializer(serializers.ModelSerializer):
+    organization = OrganizationSerializer(many=True, read_only=True)  # Включаем данные об организации
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'FIO', 'phone', 'organization', 
+            'is_active', 'is_staff', 'date_joined', 'updated_at', 'approved', 'is_verified'
+        ]
+
+
+class AccessEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AccessEvent
+        fields = [
+            'id', 'device', 'ipAddress', 'portNo', 'protocol', 'macAddress', 'channelID',
+            'dateTime', 'activePostCount', 'eventType', 'eventState', 'eventDescription',
+            'deviceName', 'majorEventType', 'subEventType', 'name', 'cardReaderKind',
+            'cardReaderNo', 'verifyNo', 'employeeNoString', 'serialNo', 'userType',
+            'currentVerifyMode', 'frontSerialNo', 'attendanceStatus', 'label',
+            'statusValue', 'mask', 'purePwdVerifyEnable'
+        ]
+        read_only_fields = fields

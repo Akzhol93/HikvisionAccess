@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from rest_framework import  generics, viewsets, views
+from rest_framework import  generics, viewsets, views,  permissions
 from .models import *
 from .serializers import *
 from rest_framework.response import Response
@@ -170,3 +170,35 @@ class ScheduleViewSet(viewsets.ViewSet):
             updated_template = device.update_schedule_template(sk, serializer.validated_data)
             return Response(updated_template)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RegionViewSet(viewsets.ModelViewSet):
+    queryset = Region.objects.all()
+    serializer_class = RegionSerializer
+    ordering = ['name']  # Упорядочивание регионов по имени по умолчанию
+
+class OrganizationViewSet(viewsets.ModelViewSet):
+    queryset = Organization.objects.all()
+    serializer_class = OrganizationSerializer
+
+
+class UserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return UserCreateSerializer  # Сериализатор для создания пользователя
+        elif self.request.method in ['PATCH', 'PUT']:
+            return UserUpdateSerializer  # Сериализатор для обновления пользователя
+        return UserDetailSerializer  # Сериализатор для получения деталей пользователя
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [permissions.AllowAny()]  # Для создания нового пользователя доступен всем
+        return [permissions.IsAuthenticated()]  # Для всех остальных методов требуется аутентификация
+    
+
+class AccessEventViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = AccessEvent.objects.all()
+    serializer_class = AccessEventSerializer
+    #permission_classes = [permissions.IsAuthenticated]

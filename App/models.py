@@ -14,23 +14,22 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 
-
-#validators
+# Валидатор для BIN и IIN
 Validator_IIN_BIIN = RegexValidator(r'^\d{12}$', message="IIN or BIN must be 12 digits")
 
 
-# Handbook models
 class Region(models.Model):
-
     number = models.PositiveSmallIntegerField(unique=True)
-    name   = models.CharField(unique=True)
+    name   = models.CharField(max_length=100, unique=True)  # Добавлено max_length и уникальность для name
 
     class Meta:
-        verbose_name        = '(Handbook) Region'
+        verbose_name = '(Handbook) Region'
         verbose_name_plural = '(Handbook) Regions'
+        ordering = ['name']  # Упорядочивание регионов по имени по умолчанию
 
     def __str__(self):
         return self.name
+
 
 class Organization(models.Model):
 
@@ -40,11 +39,12 @@ class Organization(models.Model):
     region    = models.ForeignKey(Region, on_delete= models.PROTECT)
     
     class Meta:
-        verbose_name        = '(Handbook) School'
-        verbose_name_plural = '(Handbook) Schools'
+        verbose_name        = '(Handbook) Organization'
+        verbose_name_plural = '(Handbook) Organizations'
 
     def __str__(self):
         return self.region.name + self.name
+
 
 
 class Device(models.Model):
@@ -90,6 +90,9 @@ class Device(models.Model):
             session.close()
 
     def get_persons(self, employee_no=None):
+        if self.max_record_num is None or self.max_results is None:
+            self.get_capabilities()
+            
         path = f'http://{self.ip_address}:{self.port_no}/ISAPI/AccessControl/UserInfo/Search?format=json'
         session = self._create_session()
         
@@ -402,58 +405,58 @@ class AccessEvent(models.Model):
 
 
 
-# class CustomUserManager(BaseUserManager):
-#     def create_user(self, username, email, password=None, **extra_fields):
-#         if not username:
-#             raise ValueError('The Username field must be set')
-#         if not email:
-#             raise ValueError('The Email field must be set')
-#         email = self.normalize_email(email)
-#         user = self.model(username=username, email=email, **extra_fields)
-#         user.set_password(password)
-#         user.save(using=self._db)
-#         return user
+class CustomUserManager(BaseUserManager):
+    def create_user(self, username, email, password=None, **extra_fields):
+        if not username:
+            raise ValueError('The Username field must be set')
+        if not email:
+            raise ValueError('The Email field must be set')
+        email = self.normalize_email(email)
+        user = self.model(username=username, email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
 
-#     def create_superuser(self, username, email, password=None, **extra_fields):
-#         extra_fields.setdefault('is_staff', True)
-#         extra_fields.setdefault('is_superuser', True)
-#         return self.create_user(username, email, password, **extra_fields)
+    def create_superuser(self, username, email, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        return self.create_user(username, email, password, **extra_fields)
 
 
-# class User(AbstractBaseUser, PermissionsMixin):
-#     username = models.CharField(
-#         max_length=150,
-#         unique=True,
-#         validators=[UnicodeUsernameValidator()],
-#     )
-#     email = models.EmailField(_("email address"), unique=True, db_index=True)
-#     FIO = models.CharField(_("FIO"), max_length=55)
-#     phone = models.CharField(_("phone"), max_length=15)
-#     organization = models.ManyToManyField('Organization', blank=True)
+class User(AbstractBaseUser, PermissionsMixin):
+    username = models.CharField(
+        max_length=150,
+        unique=True,
+        validators=[UnicodeUsernameValidator()],
+    )
+    email = models.EmailField(_("email address"), unique=True, db_index=True)
+    FIO = models.CharField(_("FIO"), max_length=55)
+    phone = models.CharField(_("phone"), max_length=15)
+    organization = models.ManyToManyField(Organization, blank=True)
 
-#     is_active = models.BooleanField(default=True)
-#     is_staff = models.BooleanField(default=False)
-#     date_joined = models.DateTimeField(_("date joined"), default=timezone.now)
-#     updated_at = models.DateTimeField(auto_now=True)
-#     approved = models.BooleanField(default=False)
-#     is_verified = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
+    date_joined = models.DateTimeField(_("date joined"), default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    approved = models.BooleanField(default=False)
+    is_verified = models.BooleanField(default=False)
 
-#     objects = CustomUserManager()
+    objects = CustomUserManager()
 
-#     USERNAME_FIELD = 'username'
-#     REQUIRED_FIELDS = ['email']
+    USERNAME_FIELD = 'username'
+    REQUIRED_FIELDS = ['email']
 
-#     class Meta:
-#         verbose_name = _("user")
-#         verbose_name_plural = _("users")
+    class Meta:
+        verbose_name = _("user")
+        verbose_name_plural = _("users")
 
-#     def __str__(self):
-#         return self.username
+    def __str__(self):
+        return self.username
 
-#     def clean(self):
-#         super().clean()
-#         self.email = self.__class__.objects.normalize_email(self.email)
+    def clean(self):
+        super().clean()
+        self.email = self.__class__.objects.normalize_email(self.email)
 
-#     def email_user(self, subject, message, from_email=None, **kwargs):
-#         """Send an email to this user."""
-#         send_mail(subject, message, from_email, [self.email], **kwargs)
+    def email_user(self, subject, message, from_email=None, **kwargs):
+        """Send an email to this user."""
+        send_mail(subject, message, from_email, [self.email], **kwargs)
