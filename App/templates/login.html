@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+</head>
+<body>
+    <div class="container">
+        <h1>Вход в систему</h1>
+        <form method="post" action="{% url 'login' %}">
+            {% csrf_token %}
+            {{ form.non_field_errors }}
+            <div class="form-group">
+                <label for="id_username">Username:</label>
+                <input type="text" name="username" id="id_username" required>
+                <span>{{ form.username.errors }}</span>
+            </div>
+            <div class="form-group">
+                <label for="id_password">Password:</label>
+                <input type="password" name="password" id="id_password" required>
+                <span>{{ form.password.errors }}</span>
+            </div>
+            <button type="submit">Войти</button>
+        </form>
+        <p>Нет аккаунта? <a href="{% url 'register' %}">Зарегистрируйтесь</a></p>
+    </div>
+</body>
+</html>

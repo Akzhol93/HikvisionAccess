@@ -6,7 +6,17 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 # Создаем маршруты вручную для вложенных путей
 urlpatterns = [
-    # Маршруты для пользователей
+    path('register/', UserRegisterView.as_view(), name='register'),  # Регистрация
+    path('', UserLoginView.as_view(), name='login'),  # Логин
+    path('main/', MainView.as_view(), name='main'),  # Главная страница
+    path('my_organizations/', MyOrganizationsView.as_view(), name='my_organizations'),  # Мои организации
+    path('children/', ChildrenView.as_view(), name='children'),  # Дети
+    path('reports/', ReportsView.as_view(), name='reports'),  # Отчеты
+    path('details/', DetailsView.as_view(), name='details'),  # Детализация
+    path('logout/', UserLogoutView, name='logout'),  # Выход из системы
+
+
+       # Маршруты для пользователей
     path('users/', UserViewSet.as_view({'post': 'create', 'get': 'list'}), name='user-list'),  # Получить список пользователей и создать нового
     path('users/<int:pk>/', UserViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='user-detail'),  # Получить данные пользователя и обновить его
     

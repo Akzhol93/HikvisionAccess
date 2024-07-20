@@ -421,8 +421,8 @@ class CustomUserManager(BaseUserManager):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         return self.create_user(username, email, password, **extra_fields)
-
-
+    
+    
 class User(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(
         max_length=150,
@@ -432,7 +432,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(_("email address"), unique=True, db_index=True)
     FIO = models.CharField(_("FIO"), max_length=55)
     phone = models.CharField(_("phone"), max_length=15)
-    organization = models.ManyToManyField(Organization, blank=True)
+    organization = models.ManyToManyField('Organization', blank=True)  # Это поле
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

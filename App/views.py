@@ -1,11 +1,17 @@
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from rest_framework import  generics, viewsets, views,  permissions
 from .models import *
 from .serializers import *
 from rest_framework.response import Response
 from rest_framework import status
 from django.http import Http404 
+from rest_framework.views import APIView
+from django.views.generic import TemplateView
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.permissions import AllowAny, IsAuthenticated
 
+from django.contrib.auth import authenticate, login, logout
+from .forms import UserRegistrationForm, UserLoginForm
 
 class DeviceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Device.objects.all()
@@ -202,3 +208,110 @@ class AccessEventViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AccessEvent.objects.all()
     serializer_class = AccessEventSerializer
     #permission_classes = [permissions.IsAuthenticated]
+    
+
+# views.py
+
+
+class UserRegisterView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        form = UserRegistrationForm()
+        return render(request, 'register.html', {'form': form})
+
+    def post(self, request):
+        form = UserRegistrationForm(request.POST)
+        if form.is_valid():
+            username = form.cleaned_data['username']
+            email = form.cleaned_data['email']
+            password = form.cleaned_data['password']
+            FIO = form.cleaned_data['FIO']
+            phone = form.cleaned_data['phone']
+            organizations = form.cleaned_data['organization']
+            user = User.objects.create_user(username=username, email=email, password=password, FIO=FIO, phone=phone)
+            user.organization.set(organizations)
+            user.save()
+            refresh = RefreshToken.for_user(user)
+            response = redirect('main')  # Перенаправление на главную страницу
+            response.set_cookie('access', str(refresh.access_token), httponly=True)
+            response.set_cookie('refresh', str(refresh), httponly=True)
+            return response
+        return render(request, 'register.html', {'form': form})
+
+class UserLoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        form = UserLoginForm()
+        return render(request, 'login.html', {'form': form})
+
+    def post(self, request):
+        form = UserLoginForm(request.POST)
+        if form.is_valid():
+            username = form.cleaned_data['username']
+            password = form.cleaned_data['password']
+            user = authenticate(username=username, password=password)
+            if user is not None:
+                login(request, user)
+                refresh = RefreshToken.for_user(user)
+                response = redirect('main')  # Перенаправление на главную страницу
+                response.set_cookie('access', str(refresh.access_token), httponly=True)
+                response.set_cookie('refresh', str(refresh), httponly=True)
+                return response
+            return Response({'error': 'Неверное имя пользователя или пароль'}, status=status.HTTP_400_BAD_REQUEST)
+        return render(request, 'login.html', {'form': form})
+
+class MainView(TemplateView):
+    template_name = 'main.html'
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('login')  # Перенаправление на страницу логина, если пользователь не аутентифицирован
+        return super().get(request, *args, **kwargs)
+
+class MyOrganizationsView(TemplateView):
+    template_name = 'my_organizations.html'
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('login')  # Перенаправление на страницу логина, если пользователь не аутентифицирован
+        return super().get(request, *args, **kwargs)
+
+class ChildrenView(TemplateView):
+    template_name = 'children.html'
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('login')  # Перенаправление на страницу логина, если пользователь не аутентифицирован
+        return super().get(request, *args, **kwargs)
+
+class ReportsView(TemplateView):
+    template_name = 'reports.html'
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('login')  # Перенаправление на страницу логина, если пользователь не аутентифицирован
+        return super().get(request, *args, **kwargs)
+
+class DetailsView(TemplateView):
+    template_name = 'details.html'
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('login')  # Перенаправление на страницу логина, если пользователь не аутентифицирован
+        return super().get(request, *args, **kwargs)
+
+
+def UserLogoutView(request):
+    logout(request)
+    response = redirect('login')  # Перенаправление на страницу логина
+    response.delete_cookie('access')
+    response.delete_cookie('refresh')
+    return response
+

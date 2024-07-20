@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Главное меню</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+</head>
+<body>
+    <div class="container">
+        <h1>Главное меню</h1>
+        <ul class="menu">
+            <li><a href="{% url 'my_organizations' %}">Мои организации</a></li>
+            <li><a href="{% url 'children' %}">Дети</a></li>
+            <li><a href="{% url 'reports' %}">Отчеты</a></li>
+            <li><a href="{% url 'details' %}">Детализация</a></li>
+        </ul>
+        <form action="{% url 'logout' %}" method="post">
+            {% csrf_token %}
+            <button type="submit">Выйти</button>
+        </form>
+    </div>
+</body>
+</html>

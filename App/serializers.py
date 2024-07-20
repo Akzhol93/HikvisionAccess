@@ -138,30 +138,43 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'FIO', 'phone', 'organization', 
             'is_active', 'is_staff', 'date_joined', 'updated_at', 'approved', 'is_verified'
         ]
-
-# Сериализатор для создания пользователя
 class UserCreateSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)  # Добавляем пароль для создания пользователя
+    password = serializers.CharField(write_only=True)
+    password_confirm = serializers.CharField(write_only=True)  # Добавляем поле подтверждения пароля
+    organization = serializers.PrimaryKeyRelatedField(
+        queryset=Organization.objects.all(),
+        many=True,
+        write_only=True
+    )
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'password', 'FIO', 'phone', 'organization']
+        fields = ['username', 'email', 'password', 'password_confirm', 'FIO', 'phone', 'organization']
+
+    def validate(self, data):
+        if data['password'] != data['password_confirm']:
+            raise serializers.ValidationError({'password_confirm': 'Passwords do not match'})
+        return data
 
     def create(self, validated_data):
         password = validated_data.pop('password', None)
+        organizations = validated_data.pop('organization', [])
         user = User(**validated_data)
         if password:
             user.set_password(password)
         user.save()
+        user.organization.set(organizations)
         return user
 
-# Сериализатор для обновления пользователя
 class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['FIO', 'phone', 'is_active', 'is_staff', 'approved', 'is_verified']
 
-# Сериализатор для подробного отображения пользователя
+    def validate(self, attrs):
+        # Можно добавить дополнительные проверки здесь, если требуется
+        return super().validate(attrs)
+
 class UserDetailSerializer(serializers.ModelSerializer):
     organization = OrganizationSerializer(many=True, read_only=True)  # Включаем данные об организации
 
@@ -171,6 +184,10 @@ class UserDetailSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'FIO', 'phone', 'organization', 
             'is_active', 'is_staff', 'date_joined', 'updated_at', 'approved', 'is_verified'
         ]
+
+    def get_full_name(self):
+        return self.FIO
+
 
 
 class AccessEventSerializer(serializers.ModelSerializer):
