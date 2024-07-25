@@ -43,7 +43,66 @@ class Organization(models.Model):
         verbose_name_plural = '(Handbook) Organizations'
 
     def __str__(self):
-        return self.region.name + self.name
+        return f'{self.region.name} - {self.name}'
+
+
+
+class CustomUserManager(BaseUserManager):
+    def create_user(self, username, email, password=None, **extra_fields):
+        if not username:
+            raise ValueError('The Username field must be set')
+        if not email:
+            raise ValueError('The Email field must be set')
+        email = self.normalize_email(email)
+        user = self.model(username=username, email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, username, email, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        return self.create_user(username, email, password, **extra_fields)
+    
+    
+class User(AbstractBaseUser, PermissionsMixin):
+    username = models.CharField(
+        max_length=150,
+        unique=True,
+        validators=[UnicodeUsernameValidator()],
+    )
+    email = models.EmailField(_("email address"), unique=True, db_index=True)
+    FIO = models.CharField(_("FIO"), max_length=55)
+    phone = models.CharField(_("phone"), max_length=15)
+    organization = models.ManyToManyField('Organization', blank=True)  # Это поле
+
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
+    date_joined = models.DateTimeField(_("date joined"), default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    approved = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=False)
+    #is_verified = models.BooleanField(default=False)
+
+    objects = CustomUserManager()
+
+    USERNAME_FIELD = 'username'
+    REQUIRED_FIELDS = ['email']
+
+    class Meta:
+        verbose_name = _("user")
+        verbose_name_plural = _("users")
+
+    def __str__(self):
+        return self.username
+
+    def clean(self):
+        super().clean()
+        self.email = self.__class__.objects.normalize_email(self.email)
+
+    def email_user(self, subject, message, from_email=None, **kwargs):
+        """Send an email to this user."""
+        send_mail(subject, message, from_email, [self.email], **kwargs)
 
 
 
@@ -73,6 +132,7 @@ class Device(models.Model):
             'Accept': 'text/html'
         })
         return session
+    
 
     def get_capabilities(self):
         path = f'http://{self.ip_address}:{self.port_no}/ISAPI/AccessControl/UserInfo/capabilities?format=json'
@@ -88,7 +148,36 @@ class Device(models.Model):
             print(f'HTTP Request failed: {e}')
         finally:
             session.close()
+    
+    def get_schedule_template(self, plan_template_id):
+        url = f'http://{self.ip_address}:{self.port_no}/ISAPI/AccessControl/UserRightPlanTemplate/{plan_template_id}?format=json'
+        session = self._create_session()
+        response = session.get(url)
+        response.raise_for_status()
+        return response.json()
 
+    def update_schedule_template(self, plan_template_id, data):
+        url = f'http://{self.ip_address}:{self.port_no}/ISAPI/AccessControl/UserRightPlanTemplate/{plan_template_id}?format=json'
+        session = self._create_session()
+        response = session.put(url, json=data)
+        response.raise_for_status()
+        return response.json()
+
+    def get_week_plan(self, week_plan_id):
+        url = f'http://{self.ip_address}:{self.port_no}/ISAPI/AccessControl/UserRightWeekPlanCfg/{week_plan_id}?format=json'
+        session = self._create_session()
+        response = session.get(url)
+        response.raise_for_status()
+        return response.json()
+
+    def update_week_plan(self, week_plan_id, data):
+        url = f'http://{self.ip_address}:{self.port_no}/ISAPI/AccessControl/UserRightWeekPlanCfg/{week_plan_id}?format=json'
+        session = self._create_session()
+        response = session.put(url, json=data)
+        response.raise_for_status()
+        return response.json()
+    
+    #-------------------------------------------------------------------------------------------------------------------------------
     def get_persons(self, employee_no=None):
         if self.max_record_num is None or self.max_results is None:
             self.get_capabilities()
@@ -339,33 +428,6 @@ class Device(models.Model):
         return data
 #------------------------------------------------------------------------------------------------------------
 
-    def get_schedule_template(self, plan_template_id):
-        url = f'http://{self.ip_address}:{self.port_no}/ISAPI/AccessControl/UserRightPlanTemplate/{plan_template_id}?format=json'
-        session = self._create_session()
-        response = session.get(url)
-        response.raise_for_status()
-        return response.json()
-
-    def update_schedule_template(self, plan_template_id, data):
-        url = f'http://{self.ip_address}:{self.port_no}/ISAPI/AccessControl/UserRightPlanTemplate/{plan_template_id}?format=json'
-        session = self._create_session()
-        response = session.put(url, json=data)
-        response.raise_for_status()
-        return response.json()
-
-    def get_week_plan(self, week_plan_id):
-        url = f'http://{self.ip_address}:{self.port_no}/ISAPI/AccessControl/UserRightWeekPlanCfg/{week_plan_id}?format=json'
-        session = self._create_session()
-        response = session.get(url)
-        response.raise_for_status()
-        return response.json()
-
-    def update_week_plan(self, week_plan_id, data):
-        url = f'http://{self.ip_address}:{self.port_no}/ISAPI/AccessControl/UserRightWeekPlanCfg/{week_plan_id}?format=json'
-        session = self._create_session()
-        response = session.put(url, json=data)
-        response.raise_for_status()
-        return response.json()
 
 
 class AccessEvent(models.Model):
@@ -404,59 +466,3 @@ class AccessEvent(models.Model):
         return f"Access Event {self.id} - {self.dateTime}"
 
 
-
-class CustomUserManager(BaseUserManager):
-    def create_user(self, username, email, password=None, **extra_fields):
-        if not username:
-            raise ValueError('The Username field must be set')
-        if not email:
-            raise ValueError('The Email field must be set')
-        email = self.normalize_email(email)
-        user = self.model(username=username, email=email, **extra_fields)
-        user.set_password(password)
-        user.save(using=self._db)
-        return user
-
-    def create_superuser(self, username, email, password=None, **extra_fields):
-        extra_fields.setdefault('is_staff', True)
-        extra_fields.setdefault('is_superuser', True)
-        return self.create_user(username, email, password, **extra_fields)
-    
-    
-class User(AbstractBaseUser, PermissionsMixin):
-    username = models.CharField(
-        max_length=150,
-        unique=True,
-        validators=[UnicodeUsernameValidator()],
-    )
-    email = models.EmailField(_("email address"), unique=True, db_index=True)
-    FIO = models.CharField(_("FIO"), max_length=55)
-    phone = models.CharField(_("phone"), max_length=15)
-    organization = models.ManyToManyField('Organization', blank=True)  # Это поле
-
-    is_active = models.BooleanField(default=True)
-    is_staff = models.BooleanField(default=False)
-    date_joined = models.DateTimeField(_("date joined"), default=timezone.now)
-    updated_at = models.DateTimeField(auto_now=True)
-    approved = models.BooleanField(default=False)
-    is_verified = models.BooleanField(default=False)
-
-    objects = CustomUserManager()
-
-    USERNAME_FIELD = 'username'
-    REQUIRED_FIELDS = ['email']
-
-    class Meta:
-        verbose_name = _("user")
-        verbose_name_plural = _("users")
-
-    def __str__(self):
-        return self.username
-
-    def clean(self):
-        super().clean()
-        self.email = self.__class__.objects.normalize_email(self.email)
-
-    def email_user(self, subject, message, from_email=None, **kwargs):
-        """Send an email to this user."""
-        send_mail(subject, message, from_email, [self.email], **kwargs)

@@ -16,7 +16,7 @@ urlpatterns = [
     path('logout/', UserLogoutView, name='logout'),  # Выход из системы
 
 
-       # Маршруты для пользователей
+       # Маршруты для пользователей Nado na guests pomenyat
     path('users/', UserViewSet.as_view({'post': 'create', 'get': 'list'}), name='user-list'),  # Получить список пользователей и создать нового
     path('users/<int:pk>/', UserViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='user-detail'),  # Получить данные пользователя и обновить его
     

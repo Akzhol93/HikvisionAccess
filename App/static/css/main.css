@@ -1,0 +1,211 @@
+/* styles.css */
+
+
+.container {
+    /* max-width: 1200px; */
+    margin: 30px auto;
+    padding: 20px;
+    background-color: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+    text-align: center;
+    color: #2c3e50;
+    margin-bottom: 20px;
+    font-size: 2.5rem;
+}
+
+.organization-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.organization-list > li {
+    margin-bottom: 30px;
+    border-radius: 10px;
+    overflow: hidden;
+    background-color: #ffffff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.organization-list > li h2 {
+    margin: 0;
+    padding: 15px 20px;
+    background-color: #3498db;
+    color: #ffffff;
+    font-size: 1.5rem;
+    border-bottom: 2px solid #2980b9;
+}
+
+/* Контейнер для устройств и расписаний */
+.content-container {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap; /* Позволяет переносить элементы на новую строку на маленьких экранах */
+}
+
+/* Контейнер для устройств */
+.device-container {
+    flex: 1 1 100%; /* Занимает всю ширину на маленьких экранах */
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    padding: 20px;
+}
+
+/* Контейнер для расписаний */
+.schedule-container {
+    flex: 1 1 100%; /* Занимает всю ширину на маленьких экранах */
+    padding: 20px;
+    max-height: 60vh; /* Уменьшена высота для более компактного отображения */
+    overflow-y: auto; /* Добавляет вертикальную прокрутку если контент превышает высоту */
+}
+
+/* Стиль для каждого устройства */
+.device-item {
+    width: 100%;
+    max-width: 250px; /* Увеличена максимальная ширина для более крупных экранов */
+    height: auto; /* Высота теперь автоматически подстраивается под контент */
+    background-color: #ffffff;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    padding: 15px;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.device-item:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+}
+
+.device-item img {
+    max-width: 80px;
+    max-height: 80px;
+    margin-bottom: 10px;
+}
+
+.device-item strong {
+    display: block;
+    color: #2980b9;
+    font-size: 1rem;
+    margin-top: 5px;
+}
+
+.device-item p {
+    color: #7f8c8d;
+    margin: 5px 0;
+}
+
+.device-status {
+    margin-top: 10px;
+}
+
+.device-offline {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+/* Стиль для графиков расписаний */
+.schedule-template {
+    padding: 15px;
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    margin-top: 15px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.schedule-template h3 {
+    margin-top: 0;
+    color: #27ae60;
+    font-size: 1.2rem;
+}
+
+.week-plan {
+    padding: 10px;
+    background-color: #ffffff;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    margin-bottom: 10px;
+}
+
+.week-plan strong {
+    color: #8e44ad;
+    display: block;
+}
+
+.time-segments {
+    margin-top: 10px;
+}
+
+.time-segment {
+    background-color: #ecf0f1;
+    border-radius: 5px;
+    padding: 5px;
+    margin-top: 5px;
+    font-size: 0.9rem;
+    color: #34495e;
+}
+
+/* Медиазапросы для различных размеров экрана */
+
+@media (min-width: 480px) {
+    .device-item {
+        max-width: 200px; /* Ширина блока устройства увеличивается на экранах от 480px */
+    }
+
+    .schedule-container {
+        max-height: 70vh; /* Увеличение высоты контейнера расписаний */
+    }
+}
+
+@media (min-width: 768px) {
+    .device-container {
+        flex: 2 1 60%; /* Увеличение ширины контейнера для устройств на экранах от 768px */
+    }
+
+    .schedule-container {
+        flex: 1 1 40%; /* Увеличение ширины контейнера для расписаний на экранах от 768px */
+        max-height: 70vh; /* Увеличение высоты контейнера расписаний */
+    }
+
+    .device-item {
+        max-width: 230px; /* Увеличение ширины блока устройства на экранах от 768px */
+    }
+}
+
+@media (min-width: 1024px) {
+    .device-container {
+        flex: 2 1 70%; /* Увеличение ширины контейнера для устройств на экранах от 1024px */
+    }
+
+    .schedule-container {
+        flex: 1 1 30%; /* Уменьшение ширины контейнера для расписаний на экранах от 1024px */
+        max-height: 80vh; /* Увеличение высоты контейнера расписаний */
+    }
+
+    .device-item {
+        max-width: 250px; /* Увеличение ширины блока устройства на экранах от 1024px */
+    }
+}
+
+@media (min-width: 1440px) {
+    .device-container {
+        flex: 2 1 80%; /* Увеличение ширины контейнера для устройств на экранах от 1440px */
+    }
+
+    .schedule-container {
+        flex: 1 1 20%; /* Уменьшение ширины контейнера для расписаний на экранах от 1440px */
+        max-height: 80vh; /* Увеличение высоты контейнера расписаний */
+    }
+
+    .device-item {
+        max-width: 270px; /* Увеличение ширины блока устройства на экранах от 1440px */
+    }
+}

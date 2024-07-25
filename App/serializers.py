@@ -136,8 +136,11 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'FIO', 'phone', 'organization', 
-            'is_active', 'is_staff', 'date_joined', 'updated_at', 'approved', 'is_verified'
+            'is_active', 'is_staff', 'date_joined', 'updated_at', 'approved', 'can_edit'
         ]
+    def get_full_name(self):
+        return self.FIO
+    
 class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
     password_confirm = serializers.CharField(write_only=True)  # Добавляем поле подтверждения пароля
@@ -169,21 +172,12 @@ class UserCreateSerializer(serializers.ModelSerializer):
 class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['FIO', 'phone', 'is_active', 'is_staff', 'approved', 'is_verified']
+        fields = ['FIO', 'phone', 'is_active', 'is_staff', 'approved', 'can_edit']
 
     def validate(self, attrs):
         # Можно добавить дополнительные проверки здесь, если требуется
         return super().validate(attrs)
 
-class UserDetailSerializer(serializers.ModelSerializer):
-    organization = OrganizationSerializer(many=True, read_only=True)  # Включаем данные об организации
-
-    class Meta:
-        model = User
-        fields = [
-            'id', 'username', 'email', 'FIO', 'phone', 'organization', 
-            'is_active', 'is_staff', 'date_joined', 'updated_at', 'approved', 'is_verified'
-        ]
 
     def get_full_name(self):
         return self.FIO

@@ -196,7 +196,7 @@ class UserViewSet(viewsets.ModelViewSet):
             return UserCreateSerializer  # Сериализатор для создания пользователя
         elif self.request.method in ['PATCH', 'PUT']:
             return UserUpdateSerializer  # Сериализатор для обновления пользователя
-        return UserDetailSerializer  # Сериализатор для получения деталей пользователя
+        return UserSerializer  # Сериализатор для получения деталей пользователя
 
     def get_permissions(self):
         if self.request.method == 'POST':
@@ -262,6 +262,7 @@ class UserLoginView(APIView):
             return Response({'error': 'Неверное имя пользователя или пароль'}, status=status.HTTP_400_BAD_REQUEST)
         return render(request, 'login.html', {'form': form})
 
+
 class MainView(TemplateView):
     template_name = 'main.html'
     permission_classes = [IsAuthenticated]
@@ -269,7 +270,58 @@ class MainView(TemplateView):
     def get(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return redirect('login')  # Перенаправление на страницу логина, если пользователь не аутентифицирован
-        return super().get(request, *args, **kwargs)
+        
+        # Получаем связанные с пользователем организации
+        organizations = request.user.organization.all()
+        
+        # Данные о устройствах и их расписаниях
+        organization_devices_status = []
+        
+        for org in organizations:
+            devices = Device.objects.filter(organization=org)
+            devices_status = []
+            for device in devices:
+                try:
+                    # Получаем расписания шаблонов
+                    schedules = {}
+                    for plan_template_id in range(1, 4):  # Для plan_template_id от 1 до 3
+                        schedule_template = device.get_schedule_template(plan_template_id)
+                 
+                        if 'UserRightPlanTemplate' in schedule_template:
+                            try:
+                                week_plan = device.get_week_plan(plan_template_id)
+                                week_plan = week_plan['UserRightWeekPlanCfg']
+                            
+                            except Exception:
+                                week_plan = None,
+                            
+                            schedules[plan_template_id] = {
+                                'template': schedule_template['UserRightPlanTemplate'],
+                                'week_plan': week_plan
+                            }
+                        else:
+                            schedules[plan_template_id] = None
+                except Exception:
+                    schedules = None
+                
+                devices_status.append({
+                    'device_name': device.name,
+                    'device_ip': device.ip_address,
+                    'device_port': device.port_no,
+                    'status': schedules
+                })
+                
+            organization_devices_status.append({
+                'organization_name': org.name,
+                'organization_bin': org.bin,
+                'devices': devices_status
+            })
+        
+        context = {
+            'organization_devices_status': organization_devices_status
+        }
+        print(context)
+        return self.render_to_response(context)
 
 class MyOrganizationsView(TemplateView):
     template_name = 'my_organizations.html'

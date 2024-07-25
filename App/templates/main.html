@@ -1,25 +1,84 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Главное меню</title>
-    {% load static %}
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
-</head>
-<body>
+{% extends 'base.html' %}
+
+{% load static %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'css/main.css' %}">
+
+
     <div class="container">
-        <h1>Главное меню</h1>
-        <ul class="menu">
-            <li><a href="{% url 'my_organizations' %}">Мои организации</a></li>
-            <li><a href="{% url 'children' %}">Дети</a></li>
-            <li><a href="{% url 'reports' %}">Отчеты</a></li>
-            <li><a href="{% url 'details' %}">Детализация</a></li>
+        <h1>Organization and Device Status</h1>
+        <ul class="organization-list">
+            {% for org in organization_devices_status %}
+                <li>
+                    <h2>Organization: {{ org.organization_name }} (BIN: {{ org.organization_bin }})</h2>
+                    <div class="content-container">
+                        <!-- Контейнер для устройств -->
+                        {% for device in org.devices %}
+                            <div class="device-container">
+                                <div class="device-item">
+                                    <img src="{% static 'images/K1T342.png' %}" alt="Face ID Terminal">
+                                    <strong>{{ device.device_name }}</strong>
+                                    <p>IP: {{ device.device_ip }}</p>
+                                    {% if device.status %}
+                                        <div class="device-status">
+                                            <span class="device-offline">Online</span>
+                                        </div>
+                                    {% else %}
+                                        <span class="device-offline">Device offline</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="schedule-container">
+                           
+                                {% if device.status %}
+                                    {% for template_id, template in device.status.items %}
+                                    
+                                        <div class="schedule-template">
+                                            <h3>Schedule Template {{ template_id }}: {{ template.template_name }}</h3>
+                                            {% if template.week_plan %}
+                                                {% with week_plan=template.week_plan %}
+                                     
+                                                    <div class="week-plan">
+                                                        <strong>Enabled:</strong> {{ week_plan.enable }} <br>
+                                                        {% for day in week_plan.WeekPlanCfg %}
+                                                            <strong>Day:</strong> {{day.week }} <br>
+                                                            <strong>Enabled:</strong> {{ day.enable }} <br>
+
+                                                            <strong>Time Segments:</strong>
+                                                            <div class="time-segments">
+                                                                <div class="time-segment">
+                                                                    {{ day.TimeSegment.beginTime }} - {{ day.TimeSegment.endTime }}
+                                                                </div>
+                                                            </div>
+                                                        {% empty %}
+                                                            <div class="time-segment">No time segments available</div>
+                                                        {% endfor%}
+                                                       
+                                                    </div>
+                                                {% endwith %}
+                                            {% else %}
+                                                <p>No week plans available</p>
+                                            {% endif %}
+                                        </div>
+                              
+                                    {% endfor %}
+                                {% endif %}
+                       
+                            </div>
+
+                        {% empty %}
+                            <p>No devices found for this organization.</p>
+                        {% endfor %}
+
+                        <!-- Контейнер для графиков расписаний -->
+   
+                    </div>
+                </li>
+            {% empty %}
+                <li>No organizations found for this user.</li>
+            {% endfor %}
         </ul>
-        <form action="{% url 'logout' %}" method="post">
-            {% csrf_token %}
-            <button type="submit">Выйти</button>
-        </form>
     </div>
-</body>
-</html>
+
+{% endblock %}
