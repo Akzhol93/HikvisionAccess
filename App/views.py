@@ -161,7 +161,16 @@ class WeekPlanViewSet(viewsets.ViewSet):
             updated_plan = device.update_week_plan(wk, serializer.validated_data)
             return Response(updated_plan)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+    
+    def partial_update(self, request, pk=None, wk=None):
+        device = Device.objects.get(pk=pk)
+        week_plan = device.get_week_plan(wk)
+        serializer = UserRightWeekPlanCfgSerializer(week_plan, data=request.data, partial=True)
+        if serializer.is_valid():
+            updated_plan = device.update_week_plan(wk, serializer.validated_data)
+            return Response(updated_plan)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 class ScheduleViewSet(viewsets.ViewSet):
     def retrieve(self, request, pk=None, sk=None):
         device = Device.objects.get(pk=pk)
@@ -177,6 +186,14 @@ class ScheduleViewSet(viewsets.ViewSet):
             return Response(updated_template)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    def partial_update(self, request, pk=None, sk=None):
+        device = Device.objects.get(pk=pk)
+        schedule_template = device.get_schedule_template(sk)
+        serializer = UserRightPlanTemplateSerializer(schedule_template, data=request.data, partial=True)
+        if serializer.is_valid():
+            updated_template = device.update_schedule_template(sk, serializer.validated_data)
+            return Response(updated_template)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class RegionViewSet(viewsets.ModelViewSet):
     queryset = Region.objects.all()
@@ -275,11 +292,11 @@ class MainView(TemplateView):
         organizations = request.user.organization.all()
         
         # Данные о устройствах и их расписаниях
-        organization_devices_status = []
+        organization_list = []
         
         for org in organizations:
             devices = Device.objects.filter(organization=org)
-            devices_status = []
+            devices_list = []
             for device in devices:
                 try:
                     # Получаем расписания шаблонов
@@ -304,23 +321,24 @@ class MainView(TemplateView):
                 except Exception:
                     schedules = None
                 
-                devices_status.append({
+                devices_list.append({
                     'device_name': device.name,
                     'device_ip': device.ip_address,
                     'device_port': device.port_no,
-                    'status': schedules
+                    'schedules': schedules
                 })
                 
-            organization_devices_status.append({
+            organization_list.append({
                 'organization_name': org.name,
                 'organization_bin': org.bin,
-                'devices': devices_status
+                'devices': devices_list
             })
+        print(json.dumps(organization_list))
         
         context = {
-            'organization_devices_status': organization_devices_status
+            'organization_list': json.dumps(organization_list)
         }
-        print(context)
+  
         return self.render_to_response(context)
 
 class MyOrganizationsView(TemplateView):
