@@ -26,3 +26,52 @@ li {
 .week-block ul {
     padding-left: 10px;
 }
+.plan {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.time-segment {
+    font-size: 1em;
+}
+
+.toggle-button {
+    width: 60px;
+    height: 30px;
+    background-color: #ccc;
+    border: none;
+    border-radius: 15px;
+    position: relative;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.toggle-button::before {
+    content: '';
+    width: 26px;
+    height: 26px;
+    background-color: white;
+    border-radius: 50%;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.3s ease;
+}
+
+.toggle-button.enabled {
+    background-color: #28a745;
+}
+
+.toggle-button.enabled::before {
+    transform: translateX(30px);
+}
+
+.toggle-button.disabled {
+    background-color: #dc3545;
+}
+
+.toggle-button.disabled::before {
+    transform: translateX(0);
+}

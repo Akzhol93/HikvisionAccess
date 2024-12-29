@@ -219,7 +219,7 @@ class UserViewSet(viewsets.ModelViewSet):
         if self.request.method == 'POST':
             return [permissions.AllowAny()]  # Для создания нового пользователя доступен всем
         return [permissions.IsAuthenticated()]  # Для всех остальных методов требуется аутентификация
-    
+      
 
 class AccessEventViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AccessEvent.objects.all()
@@ -275,6 +275,7 @@ class UserLoginView(APIView):
                 response = redirect('main')  # Перенаправление на главную страницу
                 response.set_cookie('access', str(refresh.access_token), httponly=True)
                 response.set_cookie('refresh', str(refresh), httponly=True)
+                print('dd',refresh.access_token)
                 return response
             return Response({'error': 'Неверное имя пользователя или пароль'}, status=status.HTTP_400_BAD_REQUEST)
         return render(request, 'login.html', {'form': form})
@@ -322,6 +323,7 @@ class MainView(TemplateView):
                     schedules = None
                 
                 devices_list.append({
+                    'device_id': device.pk,
                     'device_name': device.name,
                     'device_ip': device.ip_address,
                     'device_port': device.port_no,
@@ -333,11 +335,13 @@ class MainView(TemplateView):
                 'organization_bin': org.bin,
                 'devices': devices_list
             })
-        print(json.dumps(organization_list))
-        
+
+
         context = {
-            'organization_list': json.dumps(organization_list)
+            'organization_list': json.dumps(organization_list),
+         
         }
+       
   
         return self.render_to_response(context)
 

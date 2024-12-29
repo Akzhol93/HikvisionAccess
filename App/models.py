@@ -33,9 +33,9 @@ class Region(models.Model):
 
 class Organization(models.Model):
 
-    bin       = models.CharField(validators=[Validator_IIN_BIIN], unique=True)
+    bin       = models.CharField(validators=[Validator_IIN_BIIN], max_length=12, unique=True)
     number    = models.PositiveSmallIntegerField()
-    name      = models.CharField()
+    name      = models.CharField(max_length=50)
     region    = models.ForeignKey(Region, on_delete= models.PROTECT)
     
     class Meta:

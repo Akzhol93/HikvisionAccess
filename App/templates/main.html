@@ -12,6 +12,59 @@
 </div>
 
 <script>
+    document.cookie = "access=test_token; path=/";
+    // Retrieve the cookie
+    console.log(document.cookie);
+    function getToken() {
+    // Function to get the JWT token from cookies
+    const cookies = document.cookie.split('; ');
+    console.log('ff',cookies)
+    const tokenCookie = cookies.find(row => row.startsWith('access='));
+    console.log('ff',tokenCookie)
+
+    if (tokenCookie) {
+        return tokenCookie.split('=')[1];
+    } else {
+        console.error('JWT token not found in cookies.');
+        return null; // Return null if the token is not found
+    }
+}
+
+    // Функция для переключения состояния плана
+    function togglePlan(deviceId, planId, currentState) {
+        const newState = !currentState;
+        const token = getToken();
+
+        if (!token) {
+        alert('JWT token is missing or invalid.');
+        return; // Exit the function if no token is available
+    }
+        
+        fetch(`/devices/${deviceId}/weekplan/${planId}/`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`, // Include the token here
+        
+            },
+            body: JSON.stringify({ enable: newState })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Обновление состояния кнопки
+                const button = document.querySelector(`#toggle-button-${planId}`);
+                button.classList.toggle('enabled', newState);
+                button.classList.toggle('disabled', !newState);
+                button.dataset.state = newState;
+            } else {
+                alert('Failed to update the plan');
+            }
+        })
+        .catch(error => console.error('Error:', error));
+    }
+
+    // --------------------------------------------------------------------------------------------------------------------------
     document.addEventListener('DOMContentLoaded', function() {
         // Получаем и парсим JSON данные
         var organizations = JSON.parse('{{ organization_list|escapejs }}');
@@ -50,7 +103,15 @@
                         for (const [weekDay, plans] of Object.entries(weekPlans)) {
                             scheduleContent += `<div class="week-block"><h3>${weekDay}</h3><ul>`;
                             plans.forEach(function(plan) {
-                                scheduleContent += `<li>${plan.enable ? 'Enabled' : 'Disabled'} (${plan.TimeSegment.beginTime} - ${plan.TimeSegment.endTime})</li>`;
+                                scheduleContent += `<li>
+                                    <span>${plan.TimeSegment.beginTime} - ${plan.TimeSegment.endTime}</span>
+                                    <button 
+                                        id="toggle-button-${plan.id}" 
+                                        class="toggle-button ${plan.enable ? 'enabled' : 'disabled'}" 
+                                        data-state="${plan.enable}"
+                                        onclick="togglePlan(${device.device_id}, ${plan.id}, ${plan.enable})">
+                                    </button>
+                                </li>`;
                             });
                             scheduleContent += `</ul></div>`;
                         }
@@ -74,6 +135,5 @@
         });
     });
     </script>
-
 
 {% endblock %}

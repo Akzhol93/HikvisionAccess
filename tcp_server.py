@@ -1,136 +1,136 @@
-import asyncio
-import re,os,django
-import json
-from datetime import datetime
-from asgiref.sync import sync_to_async
-import pytz
+import os
+import django
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
 
-# Установка переменной окружения для указания на файл настроек Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Terminal.settings')
 django.setup()
-from App.models import Device,AccessEvent,Organization
 
-# Убедитесь, что у вас есть функции для подключения к базе данных, если они нужны
-# from postgre.connect import *
+from asgiref.sync import sync_to_async
+from App.models import Device, AccessEvent
+from datetime import datetime
+import pytz
+import json
 
-async def get_dict(txt):
+app = FastAPI()
+
+@app.post("/")
+async def receive_event_log(request: Request):
+    """
+    Принимаем multipart/form-data, ищем поле 'event_log',
+    парсим JSON, проверяем majorEventType/subEventType.
+    Если нужные — сохраняем в БД.
+    """
     try:
-        subs_start = 'Content-Disposition: form-data; name="event_log"'
-        subs_end = '--MIME_boundary--'
+        form = await request.form()
+        event_log_str = form.get('event_log')
+        if not event_log_str:
+            return JSONResponse(
+                {"detail": "No event_log field found"},
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
 
-        idx1 = txt.find(subs_start)
-        idx2 = txt.find(subs_end)
+        dct = json.loads(event_log_str)
 
-        if idx1 == -1 or idx2 == -1:
-            raise ValueError("Cannot find start or end of event_log")
+        # Если есть AccessControllerEvent, проверяем тип события
+        ace = dct.get("AccessControllerEvent", {})
+        major = ace.get("majorEventType")
+        sub = ace.get("subEventType")
 
-        res = txt[idx1 + len(subs_start) + 1: idx2].strip()
-        
-        # Removing unnecessary characters
-        res = res.strip('\r\n')
-        dct = json.loads(res)
-        
-        time_format = "%Y-%m-%dT%H:%M:%S%z" 
-        dct['dateTime'] = datetime.strptime(dct['dateTime'], time_format)
-        return dct
+        # Пример фильтрации: берём только major=5 и sub=75
+        if major == 5 and sub == 75:
+            await save_to_db(dct)
+            return JSONResponse({"detail": "OK, event saved"}, status_code=200)
+
+        # Если событие не нужно - игнор
+        return JSONResponse({"detail": "Event ignored"}, status_code=200)
+
     except Exception as e:
-        print(f"Error processing data: {e}")
-        return None
+        # Выведем traceback в консоль, чтобы видеть, что сломалось
+        import traceback
+        traceback.print_exc()
+
+        return JSONResponse({"detail": f"Error: {e}"}, status_code=500)
+
 
 @sync_to_async
-def create_access_event(device, dct):
-    date_time = dct['dateTime']
-    
-    if date_time.tzinfo is None:
-        # Добавляем временную зону, если она отсутствует
-        date_time = date_time.replace(tzinfo=pytz.UTC)
+def save_to_db(dct):
+    """
+    Сохранение данных из словаря dct в базу Django ORM.
+    Обратите внимание, что если какое-то поле у вас в модели NOT NULL,
+    а терминал иногда не присылает его, надо:
+      1) либо дать default/значение по умолчанию,
+      2) либо разрешить null=True в модели,
+      3) либо не сохранять такие события.
+    """
 
+    # 1. Парсим дату/время (если приходит строкой ISO-8601 с таймзоной типа "2024-12-29T13:24:37+05:00")
+    dt_str = dct.get("dateTime", "")  # может не быть ключа
+    date_time = None
+    if dt_str:
+        # Если формат всегда "YYYY-MM-DDTHH:MM:SS±HH:MM", используем strptime
+        try:
+            # Попытаемся распарсить с учетом таймзоны
+            date_time = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%S%z")
+        except ValueError:
+            # Если формат не подошел, можно fallback
+            # или просто оставить None — как вам удобнее
+            pass
+
+    # 2. Достаём AccessControllerEvent (все поля, которые могут прийти)
+    ace = dct.get("AccessControllerEvent", {})
+
+    # 3. Сохраняем (или получаем) устройство
+    ip = dct.get("ipAddress", "")
+    device, created = Device.objects.get_or_create(
+        ip_address=ip,
+        defaults={
+            "port_no": dct.get("portNo", 0),
+            "channel_id": dct.get("channelID", 0),
+            "name": ace.get("deviceName", "Unknown"),
+            "organization": 0  # или ваша логика
+        }
+    )
+
+    # 4. Собираем поля для AccessEvent
+    # Обязательно проверьте, что эти поля существуют в вашей модели AccessEvent!
     access_event = AccessEvent(
         device=device,
-        ipAddress=dct['ipAddress'],
-        portNo=dct['portNo'],
-        protocol=dct['protocol'],
-        macAddress=dct['macAddress'],
-        channelID=dct['channelID'],
+        ipAddress=ip,
+        portNo=dct.get("portNo", 0),
+        protocol=dct.get("protocol", ""),
+        macAddress=dct.get("macAddress", ""),
+        channelID=dct.get("channelID", 0),
         dateTime=date_time,
-        activePostCount=dct['activePostCount'],
-        eventType=dct['eventType'],
-        eventState=dct['eventState'],
-        eventDescription=dct['eventDescription'],
-        deviceName=dct['AccessControllerEvent']['deviceName'],
-        majorEventType=dct['AccessControllerEvent']['majorEventType'],
-        subEventType=dct['AccessControllerEvent']['subEventType'],
-        name=dct['AccessControllerEvent']['name'],
-        cardReaderKind=dct['AccessControllerEvent']['cardReaderKind'],
-        cardReaderNo=dct['AccessControllerEvent']['cardReaderNo'],
-        verifyNo=dct['AccessControllerEvent']['verifyNo'],
-        employeeNoString=dct['AccessControllerEvent']['employeeNoString'],
-        serialNo=dct['AccessControllerEvent']['serialNo'],
-        userType=dct['AccessControllerEvent']['userType'],
-        currentVerifyMode=dct['AccessControllerEvent']['currentVerifyMode'],
-        frontSerialNo=dct['AccessControllerEvent']['frontSerialNo'],
-        attendanceStatus=dct['AccessControllerEvent']['attendanceStatus'],
-        label=dct['AccessControllerEvent']['label'],
-        statusValue=dct['AccessControllerEvent']['statusValue'],
-        mask=dct['AccessControllerEvent']['mask'],
-        purePwdVerifyEnable=dct['AccessControllerEvent']['purePwdVerifyEnable'],
+        activePostCount=dct.get("activePostCount", 0),
+        eventType=dct.get("eventType", ""),
+        eventState=dct.get("eventState", ""),
+        eventDescription=dct.get("eventDescription", ""),
+        majorEventType=ace.get("majorEventType", 0),
+        subEventType=ace.get("subEventType", 0),
+
+        # Пример дополнительных полей (зависит от вашей модели)
+        name=ace.get("name", ""),
+        employeeNoString=ace.get("employeeNoString", ""),
+        userType=ace.get("userType", ""),
+        currentVerifyMode=ace.get("currentVerifyMode", ""),
+        frontSerialNo=ace.get("frontSerialNo", 0),
+        attendanceStatus=ace.get("attendanceStatus", ""),
+        label=ace.get("label", ""),
+        statusValue=ace.get("statusValue", 0),
+        mask=ace.get("mask", ""),
+        purePwdVerifyEnable=ace.get("purePwdVerifyEnable", False),
+
+        # Те поля, из-за которых бывает NOT NULL:
+        # (Например, cardReaderKind, cardReaderNo, verifyNo, serialNo и т.д.)
+        cardReaderKind=ace.get("cardReaderKind", 0),
+        cardReaderNo=ace.get("cardReaderNo", 0),
+        verifyNo=ace.get("verifyNo", 0),
+        serialNo=ace.get("serialNo", 0),
     )
+
     access_event.save()
-    return access_event
 
-async def client_connected_cb(reader, writer):
-    try:
-        data = await reader.read(1024)
-        message = data.decode()
-        print(f"Received data : {message}")  # Выводим данные для отладки
-        dct = await get_dict(message)
-
-        if dct.get('AccessControllerEvent') and dct['AccessControllerEvent']['majorEventType'] == 5 \
-                and dct['AccessControllerEvent']['subEventType'] == 75:
-            try:
-                
-                # Получаем или создаем устройство по его MAC-адресу
-                device, created = await sync_to_async(Device.objects.get_or_create)(
-                ip_address=dct['ipAddress'],
-                defaults={
-                    'port_no': dct['portNo'],
-                    'channel_id': dct['channelID'],
-                    'name': dct['AccessControllerEvent']['deviceName'],
-                    'login': '',  # Задайте логин и пароль в соответствии с вашей логикой
-                    'password': '',
-                    'organization':  0
-                    }
-                )
-    
-                # Создаем экземпляр AccessEvent и сохраняем его
-                await create_access_event(device, dct)
-         
-            except Exception as e:
-                print(f"Error during client communication(1): {e}")
-
-        addr = writer.get_extra_info('peername')
-        #print(f"Received from {addr!r}")
-        responseString = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
-        responseBytes = responseString.encode()
-        writer.write(responseBytes)
-        await writer.drain()
-    except Exception as e:
-        print(f"Error during client communication(2): {e}")
-    finally:
-        #print("Closing the connection")
-        writer.close()
-        await writer.wait_closed()
-
-async def main():
-
-    server = await asyncio.start_server(
-        client_connected_cb, '0.0.0.0', 8088)
-
-    addrs = ', '.join(str(sock.getsockname()) for sock in server.sockets)
-    print(f'Serving on {addrs}')
-
-    async with server:
-        await server.serve_forever()
-
-asyncio.run(main())
-
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("tcp_server:app", host="0.0.0.0", port=8088, reload=True, log_level="debug")
