@@ -12,6 +12,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from django.contrib.auth import authenticate, login, logout
 from .forms import UserRegistrationForm, UserLoginForm
+from .services.device_service import DeviceAPIService
 
 class DeviceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Device.objects.all()
@@ -35,18 +36,19 @@ class PersonViewSet(viewsets.ModelViewSet):
         device = self.get_device(deviceid)
         if not device:
             raise Http404("Device not found")
-        person = device.get_persons(personpk)
+        service = DeviceAPIService(device)
+        person = service.get_persons(personpk)  # <--
         return person
 
     def list(self, request, deviceid=None):
         device = self.get_device(deviceid)
         if not device:
             return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
-        persons = device.get_persons()
+        service = DeviceAPIService(device)
+        persons = service.get_persons()  # <--
         serializer = self.get_serializer(persons, many=True)
         return Response(serializer.data)
 
-   
     def retrieve(self, request, deviceid=None, pk=None):
         person = self.get_object()
         try:
@@ -64,8 +66,10 @@ class PersonViewSet(viewsets.ModelViewSet):
 
         if not device:
             return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        service = DeviceAPIService(device)
         try:
-            response = device.add_person(**serializer.validated_data)
+            response = service.add_person(**serializer.validated_data)  # <--
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -81,11 +85,12 @@ class PersonViewSet(viewsets.ModelViewSet):
         deviceid = self.kwargs['deviceid']
         personpk = self.kwargs['pk']
         device = self.get_device(deviceid)
-
         if not device:
             return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        service = DeviceAPIService(device)
         try:
-            response = device.edit_person(personpk, **serializer.validated_data)
+            response = service.edit_person(personpk, **serializer.validated_data)  # <--
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -95,29 +100,31 @@ class PersonViewSet(viewsets.ModelViewSet):
         deviceid = self.kwargs['deviceid']
         personpk = self.kwargs['pk']
         device = self.get_device(deviceid)
-
         if not device:
             return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        service = DeviceAPIService(device)
         try:
-            response = device.delete_person(personpk)
+            response = service.delete_person(personpk)  # <--
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(response, status=status.HTTP_204_NO_CONTENT)
 
 
-
-
 class FaceViewSet(viewsets.ViewSet):
-    def create(self, request, deviceid,pk):
+    def create(self, request, deviceid, pk):
         serializer = FaceSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             face_lib_type = serializer.validated_data['face_lib_type']
             fdid = serializer.validated_data['fdid']
             image = serializer.validated_data['image']
+
             device = Device.objects.get(id=deviceid)
+            service = DeviceAPIService(device)  # создаём сервис
+
             image_data = image.read()
-            response_data = device.add_face(face_lib_type, fdid, str(pk), image_data)
+            response_data = service.add_face(face_lib_type, fdid, str(pk), image_data)  # <--
             return Response(response_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -127,73 +134,89 @@ class FaceViewSet(viewsets.ViewSet):
             face_lib_type = serializer.validated_data['face_lib_type']
             fdid = serializer.validated_data['fdid']
             image = serializer.validated_data.get('image')
+
             device = Device.objects.get(id=deviceid)
+            service = DeviceAPIService(device)  # создаём сервис
+
             image_data = image.read()
-            response_data = device.edit_face(face_lib_type, fdid, str(pk), image_data)
+            response_data = service.edit_face(face_lib_type, fdid, str(pk), image_data)  # <--
             return Response(response_data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def retrieve(self, request, deviceid, pk=None):
         face_lib_type = request.query_params.get('face_lib_type')
         fdid = request.query_params.get('fdid')
+
         device = Device.objects.get(id=deviceid)
-        response_data = device.get_face(face_lib_type, fdid, str(pk))
+        service = DeviceAPIService(device)  # сервис
+
+        response_data = service.get_face(face_lib_type, fdid, str(pk))  # <--
         return Response(response_data)
     
     def destroy(self, request, deviceid, pk=None):
         device = Device.objects.get(id=deviceid)
-        response_data = device.delete_face(str(pk))
+        service = DeviceAPIService(device)
+
+        response_data = service.delete_face(str(pk))  # <--
         return Response(response_data)
-
-
 
 class WeekPlanViewSet(viewsets.ViewSet):
     def retrieve(self, request, pk=None, wk=None):
         device = Device.objects.get(pk=pk)
-        week_plan = device.get_week_plan(wk)
+        service = DeviceAPIService(device)
+        week_plan = service.get_week_plan(wk)  # <--
         serializer = UserRightWeekPlanCfgSerializer(week_plan)
         return Response(serializer.data)
 
     def update(self, request, pk=None, wk=None):
         device = Device.objects.get(pk=pk)
+        service = DeviceAPIService(device)
         serializer = UserRightWeekPlanCfgSerializer(data=request.data)
         if serializer.is_valid():
-            updated_plan = device.update_week_plan(wk, serializer.validated_data)
+            updated_plan = service.update_week_plan(wk, serializer.validated_data)  # <--
             return Response(updated_plan)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def partial_update(self, request, pk=None, wk=None):
         device = Device.objects.get(pk=pk)
-        week_plan = device.get_week_plan(wk)
+        service = DeviceAPIService(device)
+        
+        week_plan = service.get_week_plan(wk)  # <--
         serializer = UserRightWeekPlanCfgSerializer(week_plan, data=request.data, partial=True)
         if serializer.is_valid():
-            updated_plan = device.update_week_plan(wk, serializer.validated_data)
+            updated_plan = service.update_week_plan(wk, serializer.validated_data)  # <--
             return Response(updated_plan)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
     
 class ScheduleViewSet(viewsets.ViewSet):
     def retrieve(self, request, pk=None, sk=None):
         device = Device.objects.get(pk=pk)
-        schedule_template = device.get_schedule_template(sk)
+        service = DeviceAPIService(device)
+        schedule_template = service.get_schedule_template(sk)  # <--
         serializer = UserRightPlanTemplateSerializer(schedule_template)
         return Response(serializer.data)
 
     def update(self, request, pk=None, sk=None):
         device = Device.objects.get(pk=pk)
+        service = DeviceAPIService(device)
         serializer = UserRightPlanTemplateSerializer(data=request.data)
         if serializer.is_valid():
-            updated_template = device.update_schedule_template(sk, serializer.validated_data)
+            updated_template = service.update_schedule_template(sk, serializer.validated_data)  # <--
             return Response(updated_template)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def partial_update(self, request, pk=None, sk=None):
         device = Device.objects.get(pk=pk)
-        schedule_template = device.get_schedule_template(sk)
+        service = DeviceAPIService(device)
+        schedule_template = service.get_schedule_template(sk)  # <--
         serializer = UserRightPlanTemplateSerializer(schedule_template, data=request.data, partial=True)
         if serializer.is_valid():
-            updated_template = device.update_schedule_template(sk, serializer.validated_data)
+            updated_template = service.update_schedule_template(sk, serializer.validated_data)  # <--
             return Response(updated_template)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class RegionViewSet(viewsets.ModelViewSet):
     queryset = Region.objects.all()
@@ -287,41 +310,40 @@ class MainView(TemplateView):
 
     def get(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
-            return redirect('login')  # Перенаправление на страницу логина, если пользователь не аутентифицирован
-        
-        # Получаем связанные с пользователем организации
+            return redirect('login')
+
         organizations = request.user.organization.all()
-        
-        # Данные о устройствах и их расписаниях
         organization_list = []
         
         for org in organizations:
             devices = Device.objects.filter(organization=org)
             devices_list = []
+
             for device in devices:
-                try:
-                    # Получаем расписания шаблонов
-                    schedules = {}
-                    for plan_template_id in range(1, 4):  # Для plan_template_id от 1 до 3
-                        schedule_template = device.get_schedule_template(plan_template_id)
-                 
+                service = DeviceAPIService(device)  # создаём сервис
+                schedules = {}
+
+                for plan_template_id in range(1, 4):
+                    try:
+                        schedule_template = service.get_schedule_template(plan_template_id)  # <--
+                        
                         if 'UserRightPlanTemplate' in schedule_template:
+                            # Пытаемся получить week_plan
                             try:
-                                week_plan = device.get_week_plan(plan_template_id)
-                                week_plan = week_plan['UserRightWeekPlanCfg']
-                            
+                                week_plan_data = service.get_week_plan(plan_template_id)  # <--
+                                week_plan_data = week_plan_data['UserRightWeekPlanCfg']
                             except Exception:
-                                week_plan = None,
-                            
+                                week_plan_data = None
+
                             schedules[plan_template_id] = {
                                 'template': schedule_template['UserRightPlanTemplate'],
-                                'week_plan': week_plan
+                                'week_plan': week_plan_data
                             }
                         else:
                             schedules[plan_template_id] = None
-                except Exception:
-                    schedules = None
-                
+                    except Exception:
+                        schedules = None
+
                 devices_list.append({
                     'device_id': device.pk,
                     'device_name': device.name,
@@ -336,14 +358,12 @@ class MainView(TemplateView):
                 'devices': devices_list
             })
 
-
         context = {
             'organization_list': json.dumps(organization_list),
-         
         }
-       
-  
         return self.render_to_response(context)
+
+
 
 class MyOrganizationsView(TemplateView):
     template_name = 'my_organizations.html'
