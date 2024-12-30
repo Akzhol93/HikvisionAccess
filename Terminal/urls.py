@@ -19,7 +19,37 @@ from django.urls import path,include
 from django.conf import settings
 from django.conf.urls.static import static
 
+# Импортируем drf-spectacular
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularRedocView,
+    SpectacularSwaggerView,
+)
+
 urlpatterns = [
+    # Админка
     path('admin/', admin.site.urls),
-    path('', include('App.urls'))
-]  + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+
+    # Ваши основные URL'ы
+    path('', include('App.urls')),
+
+    # Точка генерации схемы OpenAPI
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+
+    # Swagger UI (дружелюбный интерфейс для работы со схемой)
+    path(
+        'api/schema/swagger-ui/',
+        SpectacularSwaggerView.as_view(url_name='schema'),
+        name='swagger-ui'
+    ),
+
+    # Redoc UI
+    path(
+        'api/schema/redoc/',
+        SpectacularRedocView.as_view(url_name='schema'),
+        name='redoc'
+    ),
+]
+
+# Подключаем статику (если нужно)
+urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
