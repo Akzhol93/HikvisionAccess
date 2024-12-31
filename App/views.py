@@ -1,231 +1,332 @@
 from django.shortcuts import render, redirect
-from rest_framework import  generics, viewsets, views,  permissions
-from .models import *
-from .serializers import *
+from rest_framework import generics, viewsets, views, permissions, status
 from rest_framework.response import Response
-from rest_framework import status
-from django.http import Http404 
+from django.http import Http404
 from rest_framework.views import APIView
 from django.views.generic import TemplateView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import AllowAny, IsAuthenticated
-
 from django.contrib.auth import authenticate, login, logout
-from .forms import UserRegistrationForm, UserLoginForm
+
+import json
+
+from .models import (
+    Device, Organization, Region, User, AccessEvent
+)
+from .serializers import (
+    DeviceSerializer, PersonSerializer, FaceSerializer,
+    UserRightWeekPlanCfgSerializer, UserRightPlanTemplateSerializer,
+    RegionSerializer, OrganizationSerializer, UserSerializer,
+    UserCreateSerializer, UserUpdateSerializer,
+    AccessEventSerializer,  UserLoginSerializer
+)
 from .services.device_service import DeviceAPIService
 
-class DeviceViewSet(viewsets.ReadOnlyModelViewSet):
+
+# =============================================================================
+# (1) DEVICE VIEWSET
+# =============================================================================
+
+class DeviceViewSet(viewsets.ModelViewSet):
+    """
+    Полноценный CRUD для модели Device:
+      - GET    /devices/        -> list
+      - POST   /devices/        -> create
+      - GET    /devices/{pk}/   -> retrieve
+      - PUT    /devices/{pk}/   -> update
+      - PATCH  /devices/{pk}/   -> partial_update
+      - DELETE /devices/{pk}/   -> destroy
+    """
     queryset = Device.objects.all()
-    serializer_class   = DeviceSerializer
-    #permission_classes = (IsAuthenticated,isVerified)
+    serializer_class = DeviceSerializer
+    # permission_classes = (IsAuthenticated,)
 
 
-class PersonViewSet(viewsets.ModelViewSet):
-    queryset = Device.objects.all()
+# =============================================================================
+# (2) PERSON VIEWSET (вложенный в devices)
+# =============================================================================
+#
+#  При использовании NestedDefaultRouter с:
+#     router.register('devices', DeviceViewSet, basename='devices')
+#     devices_router = NestedDefaultRouter(router, 'devices', lookup='device')
+#     devices_router.register('persons', PersonViewSet, basename='device-persons')
+#
+#  => URL станет: /devices/{device_pk}/persons/{pk}/
+#  => Параметры: device_pk, pk
+# =============================================================================
+
+class PersonViewSet(viewsets.ViewSet):
     serializer_class = PersonSerializer
 
-    def get_device(self, deviceid):
+    def get_device(self, device_pk):
         try:
-            return Device.objects.get(pk=deviceid)
+            return Device.objects.get(pk=device_pk)
         except Device.DoesNotExist:
             return None
-        
-    def get_object(self):
-        deviceid = self.kwargs['deviceid']
-        personpk = self.kwargs['pk']
-        device = self.get_device(deviceid)
+
+    def list(self, request, device_pk=None):
+        device = self.get_device(device_pk)
+        if not device:
+            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+        service = DeviceAPIService(device)
+        persons = service.get_persons()  # все персоны на устройстве
+        serializer = self.serializer_class(persons, many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, device_pk=None, pk=None):
+        device = self.get_device(device_pk)
         if not device:
             raise Http404("Device not found")
         service = DeviceAPIService(device)
-        person = service.get_persons(personpk)  # <--
-        return person
-
-    def list(self, request, deviceid=None):
-        device = self.get_device(deviceid)
-        if not device:
-            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
-        service = DeviceAPIService(device)
-        persons = service.get_persons()  # <--
-        serializer = self.get_serializer(persons, many=True)
-        return Response(serializer.data)
-
-    def retrieve(self, request, deviceid=None, pk=None):
-        person = self.get_object()
+        person = service.get_persons(pk)  # получить одного
+        # Если хотите сериализовать:
         try:
-            serializer = self.get_serializer(person)
-            data = serializer.data
-            return Response(data)
+            serializer = self.serializer_class(person)
+            return Response(serializer.data)
         except Exception:
+            # Если person не является словарём, а уже json, возможно вернём как есть
             return Response(person, status=status.HTTP_200_OK)
 
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+    def create(self, request, device_pk=None):
+        serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
-        deviceid = kwargs['deviceid']
-        device = self.get_device(deviceid)
 
+        device = self.get_device(device_pk)
         if not device:
             return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
-        
+
         service = DeviceAPIService(device)
         try:
-            response = service.add_person(**serializer.validated_data)  # <--
+            response = service.add_person(**serializer.validated_data)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        headers = self.get_success_headers(serializer.data)
-        return Response(response, status=status.HTTP_201_CREATED, headers=headers)
+        return Response(response, status=status.HTTP_201_CREATED)
 
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', True)
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+    def update(self, request, device_pk=None, pk=None):
+        # partial_update и update можно различать, но здесь упрощённо
+        partial = True
+        serializer = self.serializer_class(data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
-        
-        deviceid = self.kwargs['deviceid']
-        personpk = self.kwargs['pk']
-        device = self.get_device(deviceid)
+
+        device = self.get_device(device_pk)
         if not device:
             return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
-        
+
         service = DeviceAPIService(device)
         try:
-            response = service.edit_person(personpk, **serializer.validated_data)  # <--
+            response = service.edit_person(pk, **serializer.validated_data)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(response, status=status.HTTP_200_OK)
 
-    def destroy(self, request, *args, **kwargs):
-        deviceid = self.kwargs['deviceid']
-        personpk = self.kwargs['pk']
-        device = self.get_device(deviceid)
+    def partial_update(self, request, device_pk=None, pk=None):
+        return self.update(request, device_pk, pk)  # переиспользуем логику
+
+    def destroy(self, request, device_pk=None, pk=None):
+        device = self.get_device(device_pk)
         if not device:
             return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
-        
+
         service = DeviceAPIService(device)
         try:
-            response = service.delete_person(personpk)  # <--
+            response = service.delete_person(pk)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
         return Response(response, status=status.HTTP_204_NO_CONTENT)
 
 
+# =============================================================================
+# (3) FACE VIEWSET (вложенный глубже: /devices/{device_pk}/persons/{person_pk}/face/...)
+# =============================================================================
+#
+#  Если вы используете ещё один NestedDefaultRouter для persons:
+#    persons_router = NestedDefaultRouter(devices_router, 'persons', lookup='person')
+#    persons_router.register('face', FaceViewSet, basename='person-face')
+#
+#  => URL: /devices/{device_pk}/persons/{person_pk}/face/{pk}/
+#
+#  => Аргументы: device_pk, person_pk, pk (при необходимости)
+# =============================================================================
+
 class FaceViewSet(viewsets.ViewSet):
-    def create(self, request, deviceid, pk):
+    serializer_class = FaceSerializer
+
+    def create(self, request, device_pk=None, person_pk=None):
         serializer = FaceSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             face_lib_type = serializer.validated_data['face_lib_type']
             fdid = serializer.validated_data['fdid']
             image = serializer.validated_data['image']
 
-            device = Device.objects.get(id=deviceid)
-            service = DeviceAPIService(device)  # создаём сервис
+            # Получаем устройство
+            try:
+                device = Device.objects.get(pk=device_pk)
+            except Device.DoesNotExist:
+                return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
 
+            service = DeviceAPIService(device)
             image_data = image.read()
-            response_data = service.add_face(face_lib_type, fdid, str(pk), image_data)  # <--
+            # pk = не всегда используется, но если вы хотите, чтобы pk = employeeNo, тогда:
+            response_data = service.add_face(face_lib_type, fdid, str(person_pk), image_data)
             return Response(response_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def update(self, request, deviceid, pk=None):
+    def retrieve(self, request, device_pk=None, person_pk=None, pk=None):
+        face_lib_type = request.query_params.get('face_lib_type')
+        fdid = request.query_params.get('fdid')
+
+        try:
+            device = Device.objects.get(pk=device_pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        service = DeviceAPIService(device)
+        response_data = service.get_face(face_lib_type, fdid, str(person_pk))
+        return Response(response_data)
+
+    def update(self, request, device_pk=None, person_pk=None, pk=None):
         serializer = FaceSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             face_lib_type = serializer.validated_data['face_lib_type']
             fdid = serializer.validated_data['fdid']
             image = serializer.validated_data.get('image')
 
-            device = Device.objects.get(id=deviceid)
-            service = DeviceAPIService(device)  # создаём сервис
+            try:
+                device = Device.objects.get(pk=device_pk)
+            except Device.DoesNotExist:
+                return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
 
+            service = DeviceAPIService(device)
             image_data = image.read()
-            response_data = service.edit_face(face_lib_type, fdid, str(pk), image_data)  # <--
+            response_data = service.edit_face(face_lib_type, fdid, str(person_pk), image_data)
             return Response(response_data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    def retrieve(self, request, deviceid, pk=None):
-        face_lib_type = request.query_params.get('face_lib_type')
-        fdid = request.query_params.get('fdid')
 
-        device = Device.objects.get(id=deviceid)
-        service = DeviceAPIService(device)  # сервис
+    def partial_update(self, request, device_pk=None, person_pk=None, pk=None):
+        return self.update(request, device_pk, person_pk, pk)
 
-        response_data = service.get_face(face_lib_type, fdid, str(pk))  # <--
-        return Response(response_data)
-    
-    def destroy(self, request, deviceid, pk=None):
-        device = Device.objects.get(id=deviceid)
+    def destroy(self, request, device_pk=None, person_pk=None, pk=None):
+        try:
+            device = Device.objects.get(pk=device_pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+
         service = DeviceAPIService(device)
-
-        response_data = service.delete_face(str(pk))  # <--
+        response_data = service.delete_face(str(person_pk))
         return Response(response_data)
+
+
+# =============================================================================
+# (4) WEEK PLAN VIEWSET: /devices/{device_pk}/weekplan/{pk}/
+# =============================================================================
+#
+#  Если вы делаете:
+#  devices_router.register('weekplan', WeekPlanViewSet, basename='device-weekplan')
+#
+#  => URL: /devices/{device_pk}/weekplan/{pk}/
+#  => Параметры: device_pk, pk
+# =============================================================================
 
 class WeekPlanViewSet(viewsets.ViewSet):
-    def retrieve(self, request, pk=None, wk=None):
-        device = Device.objects.get(pk=pk)
+    serializer_class = UserRightWeekPlanCfgSerializer
+
+    def retrieve(self, request, device_pk=None, pk=None):
+        try:
+            device = Device.objects.get(pk=device_pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+
         service = DeviceAPIService(device)
-        week_plan = service.get_week_plan(wk)  # <--
-        serializer = UserRightWeekPlanCfgSerializer(week_plan)
+        week_plan = service.get_week_plan(pk)  # pk = week_plan_id
+        serializer = self.serializer_class(week_plan)
         return Response(serializer.data)
 
-    def update(self, request, pk=None, wk=None):
-        device = Device.objects.get(pk=pk)
+    def update(self, request, device_pk=None, pk=None):
+        try:
+            device = Device.objects.get(pk=device_pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+
         service = DeviceAPIService(device)
-        serializer = UserRightWeekPlanCfgSerializer(data=request.data)
+        serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
-            updated_plan = service.update_week_plan(wk, serializer.validated_data)  # <--
+            updated_plan = service.update_week_plan(pk, serializer.validated_data)
             return Response(updated_plan)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    def partial_update(self, request, pk=None, wk=None):
-        device = Device.objects.get(pk=pk)
+    def partial_update(self, request, device_pk=None, pk=None):
+        try:
+            device = Device.objects.get(pk=device_pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+
         service = DeviceAPIService(device)
-        
-        week_plan = service.get_week_plan(wk)  # <--
-        serializer = UserRightWeekPlanCfgSerializer(week_plan, data=request.data, partial=True)
+        week_plan = service.get_week_plan(pk)
+        serializer = self.serializer_class(week_plan, data=request.data, partial=True)
         if serializer.is_valid():
-            updated_plan = service.update_week_plan(wk, serializer.validated_data)  # <--
+            updated_plan = service.update_week_plan(pk, serializer.validated_data)
             return Response(updated_plan)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-    
+# =============================================================================
+# (5) SCHEDULE VIEWSET: /devices/{device_pk}/schedule/{pk}/
+# =============================================================================
+
 class ScheduleViewSet(viewsets.ViewSet):
-    def retrieve(self, request, pk=None, sk=None):
-        device = Device.objects.get(pk=pk)
+    serializer_class = UserRightPlanTemplateSerializer
+
+    def retrieve(self, request, device_pk=None, pk=None):
+        try:
+            device = Device.objects.get(pk=device_pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+
         service = DeviceAPIService(device)
-        schedule_template = service.get_schedule_template(sk)  # <--
-        serializer = UserRightPlanTemplateSerializer(schedule_template)
+        schedule_template = service.get_schedule_template(pk)
+        serializer = self.serializer_class(schedule_template)
         return Response(serializer.data)
 
-    def update(self, request, pk=None, sk=None):
-        device = Device.objects.get(pk=pk)
+    def update(self, request, device_pk=None, pk=None):
+        try:
+            device = Device.objects.get(pk=device_pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+
         service = DeviceAPIService(device)
-        serializer = UserRightPlanTemplateSerializer(data=request.data)
+        serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
-            updated_template = service.update_schedule_template(sk, serializer.validated_data)  # <--
+            updated_template = service.update_schedule_template(pk, serializer.validated_data)
             return Response(updated_template)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def partial_update(self, request, pk=None, sk=None):
-        device = Device.objects.get(pk=pk)
+    def partial_update(self, request, device_pk=None, pk=None):
+        try:
+            device = Device.objects.get(pk=device_pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+
         service = DeviceAPIService(device)
-        schedule_template = service.get_schedule_template(sk)  # <--
-        serializer = UserRightPlanTemplateSerializer(schedule_template, data=request.data, partial=True)
+        schedule_template = service.get_schedule_template(pk)
+        serializer = self.serializer_class(schedule_template, data=request.data, partial=True)
         if serializer.is_valid():
-            updated_template = service.update_schedule_template(sk, serializer.validated_data)  # <--
+            updated_template = service.update_schedule_template(pk, serializer.validated_data)
             return Response(updated_template)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+# =============================================================================
+# (6) REGION, ORG, USER, ACCESSEVENT VIEWSETS
+# =============================================================================
 
 class RegionViewSet(viewsets.ModelViewSet):
     queryset = Region.objects.all()
     serializer_class = RegionSerializer
-    ordering = ['name']  # Упорядочивание регионов по имени по умолчанию
+    ordering = ['name']
 
-class OrganizationViewSet(viewsets.ModelViewSet):
-    queryset = Organization.objects.all()
-    serializer_class = OrganizationSerializer
+
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -233,174 +334,82 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
-            return UserCreateSerializer  # Сериализатор для создания пользователя
+            return UserCreateSerializer
         elif self.request.method in ['PATCH', 'PUT']:
-            return UserUpdateSerializer  # Сериализатор для обновления пользователя
-        return UserSerializer  # Сериализатор для получения деталей пользователя
+            return UserUpdateSerializer
+        return UserSerializer
 
     def get_permissions(self):
         if self.request.method == 'POST':
-            return [permissions.AllowAny()]  # Для создания нового пользователя доступен всем
-        return [permissions.IsAuthenticated()]  # Для всех остальных методов требуется аутентификация
-      
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated()]
+    
+    def create(self, request, *args, **kwargs):
+        """
+        Переопределяем создание пользователя (create), чтобы вернуть JWT-токены.
+        Проверка password == password_confirm будет в самом сериализаторе (validate).
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Вызов serializer.save() уже создаст пользователя (через метод create() в сериализаторе)
+        user = serializer.save()  
+
+        # Генерируем JWT-токены (refresh / access)
+        refresh = RefreshToken.for_user(user)
+        data = {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+        }
+
+        # Можно дополнительно вернуть что-то ещё (ID пользователя, username и т.д.)
+        # data['user_id'] = user.id
+        # data['username'] = user.username
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(data, status=status.HTTP_201_CREATED, headers=headers)
+
 
 class AccessEventViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AccessEvent.objects.all()
     serializer_class = AccessEventSerializer
-    #permission_classes = [permissions.IsAuthenticated]
-    
-
-# views.py
+    # permission_classes = [permissions.IsAuthenticated]
 
 
-class UserRegisterView(APIView):
-    permission_classes = [AllowAny]
+# =============================================================================
+# (7) USER REGISTER / LOGIN VIEWS (примеры на APIView)
+# =============================================================================
 
-    def get(self, request):
-        form = UserRegistrationForm()
-        return render(request, 'register.html', {'form': form})
 
-    def post(self, request):
-        form = UserRegistrationForm(request.POST)
-        if form.is_valid():
-            username = form.cleaned_data['username']
-            email = form.cleaned_data['email']
-            password = form.cleaned_data['password']
-            FIO = form.cleaned_data['FIO']
-            phone = form.cleaned_data['phone']
-            organizations = form.cleaned_data['organization']
-            user = User.objects.create_user(username=username, email=email, password=password, FIO=FIO, phone=phone)
-            user.organization.set(organizations)
-            user.save()
-            refresh = RefreshToken.for_user(user)
-            response = redirect('main')  # Перенаправление на главную страницу
-            response.set_cookie('access', str(refresh.access_token), httponly=True)
-            response.set_cookie('refresh', str(refresh), httponly=True)
-            return response
-        return render(request, 'register.html', {'form': form})
 
 class UserLoginView(APIView):
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        form = UserLoginForm()
-        return render(request, 'login.html', {'form': form})
+    serializer_class = UserLoginSerializer
 
     def post(self, request):
-        form = UserLoginForm(request.POST)
-        if form.is_valid():
-            username = form.cleaned_data['username']
-            password = form.cleaned_data['password']
-            user = authenticate(username=username, password=password)
-            if user is not None:
-                login(request, user)
-                refresh = RefreshToken.for_user(user)
-                response = redirect('main')  # Перенаправление на главную страницу
-                response.set_cookie('access', str(refresh.access_token), httponly=True)
-                response.set_cookie('refresh', str(refresh), httponly=True)
-                print('dd',refresh.access_token)
-                return response
-            return Response({'error': 'Неверное имя пользователя или пароль'}, status=status.HTTP_400_BAD_REQUEST)
-        return render(request, 'login.html', {'form': form})
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            user = serializer.validated_data['user']
+            # login(request, user)
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                'refresh': str(refresh),
+                'access': str(refresh.access_token)
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class MainView(TemplateView):
-    template_name = 'main.html'
-    permission_classes = [IsAuthenticated]
+class OrganizationViewSet(viewsets.ModelViewSet):
+    queryset = Organization.objects.all()
+    serializer_class = OrganizationSerializer
 
-    def get(self, request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('login')
-
-        organizations = request.user.organization.all()
-        organization_list = []
-        
-        for org in organizations:
-            devices = Device.objects.filter(organization=org)
-            devices_list = []
-
-            for device in devices:
-                service = DeviceAPIService(device)  # создаём сервис
-                schedules = {}
-
-                for plan_template_id in range(1, 4):
-                    try:
-                        schedule_template = service.get_schedule_template(plan_template_id)  # <--
-                        
-                        if 'UserRightPlanTemplate' in schedule_template:
-                            # Пытаемся получить week_plan
-                            try:
-                                week_plan_data = service.get_week_plan(plan_template_id)  # <--
-                                week_plan_data = week_plan_data['UserRightWeekPlanCfg']
-                            except Exception:
-                                week_plan_data = None
-
-                            schedules[plan_template_id] = {
-                                'template': schedule_template['UserRightPlanTemplate'],
-                                'week_plan': week_plan_data
-                            }
-                        else:
-                            schedules[plan_template_id] = None
-                    except Exception:
-                        schedules = None
-
-                devices_list.append({
-                    'device_id': device.pk,
-                    'device_name': device.name,
-                    'device_ip': device.ip_address,
-                    'device_port': device.port_no,
-                    'schedules': schedules
-                })
-                
-            organization_list.append({
-                'organization_name': org.name,
-                'organization_bin': org.bin,
-                'devices': devices_list
-            })
-
-        context = {
-            'organization_list': json.dumps(organization_list),
-        }
-        return self.render_to_response(context)
-
-
-
-class MyOrganizationsView(TemplateView):
-    template_name = 'my_organizations.html'
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('login')  # Перенаправление на страницу логина, если пользователь не аутентифицирован
-        return super().get(request, *args, **kwargs)
-
-class ChildrenView(TemplateView):
-    template_name = 'children.html'
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('login')  # Перенаправление на страницу логина, если пользователь не аутентифицирован
-        return super().get(request, *args, **kwargs)
-
-class ReportsView(TemplateView):
-    template_name = 'reports.html'
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('login')  # Перенаправление на страницу логина, если пользователь не аутентифицирован
-        return super().get(request, *args, **kwargs)
-
-class DetailsView(TemplateView):
-    template_name = 'details.html'
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('login')  # Перенаправление на страницу логина, если пользователь не аутентифицирован
-        return super().get(request, *args, **kwargs)
-
+    def get_queryset(self):
+        qs = super().get_queryset()
+        region_id = self.request.query_params.get('region_id')
+        if region_id:
+            # фильтруем по региону
+            qs = qs.filter(region_id=region_id)
+        return qs
+    
 
 def UserLogoutView(request):
     logout(request)

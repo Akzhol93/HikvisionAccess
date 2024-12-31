@@ -34,18 +34,43 @@ class Region(models.Model):
 
 
 class Organization(models.Model):
-
-    bin       = models.CharField(validators=[Validator_IIN_BIIN], max_length=12, unique=True)
-    number    = models.PositiveSmallIntegerField()
-    name      = models.CharField(max_length=50)
-    region    = models.ForeignKey(Region, on_delete= models.PROTECT)
+    parent = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='children'
+    )
+    # Если parent=None => это «главная» организация, иначе «обычная/дочерняя».
     
+    bin    = models.CharField(validators=[Validator_IIN_BIIN], max_length=12, unique=True)
+    number = models.PositiveSmallIntegerField()
+    name   = models.CharField(max_length=50)
+    region = models.ForeignKey(Region, on_delete=models.PROTECT)
+
     class Meta:
         verbose_name        = '(Handbook) Organization'
         verbose_name_plural = '(Handbook) Organizations'
 
     def __str__(self):
         return f'{self.region.name} - {self.name}'
+
+    def is_main(self):
+        """
+        Возвращает True, если организация не имеет родителя (т.е. 'главная').
+        """
+        return self.parent is None
+
+    def get_all_suborganizations(self):
+        """
+        Рекурсивно возвращает список (или QuerySet) всех подчинённых организаций.
+        Если сама организация 'главная', вернёт себя + всех «потомков».
+        Если организация 'обычная', вернёт только её саму (или можно подправить).
+        """
+        descendants = [self]
+        for child in self.children.all():  # children -> related_name='children'
+            descendants.extend(child.get_all_suborganizations())
+        return descendants
 
 
 
@@ -69,22 +94,29 @@ class CustomUserManager(BaseUserManager):
     
 class User(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(
-        max_length=150,
+        max_length=50,
         unique=True,
         validators=[UnicodeUsernameValidator()],
     )
-    email = models.EmailField(_("email address"), unique=True, db_index=True)
-    FIO = models.CharField(_("FIO"), max_length=55)
-    phone = models.CharField(_("phone"), max_length=15)
-    organization = models.ManyToManyField('Organization', blank=True)  # Это поле
+    email = models.EmailField(_("email address"), unique=True, db_index=True,max_length=100)
+    FIO = models.CharField(_("FIO"), max_length=100)
+    phone = models.CharField(_("phone"), max_length=20)
+
+    # Вместо ManyToManyField делаем ForeignKey (каждый пользователь — одна организация)
+    organization = models.ForeignKey(
+        'Organization',
+        on_delete=models.PROTECT,   # или CASCADE, как хотите
+        related_name='users',
+        null=True,                  # допустимо ли хранить юзера без организации?
+        blank=True                  # нужно ли разрешить пустое значение?
+    )
 
     is_active = models.BooleanField(default=True)
-    is_staff = models.BooleanField(default=False)
+    is_staff  = models.BooleanField(default=False)
     date_joined = models.DateTimeField(_("date joined"), default=timezone.now)
-    updated_at = models.DateTimeField(auto_now=True)
-    approved = models.BooleanField(default=False)
-    can_edit = models.BooleanField(default=False)
-    #is_verified = models.BooleanField(default=False)
+    updated_at  = models.DateTimeField(auto_now=True)
+    approved    = models.BooleanField(default=False)
+    can_edit    = models.BooleanField(default=False)
 
     objects = CustomUserManager()
 
@@ -97,15 +129,25 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.username
+    
+    def get_accessible_devices(self):
+        """
+        Возвращает QuerySet устройств, доступных пользователю.
+        Если пользователь в главной организации, то все устройства
+        этой организации + всех дочерних.
+        Если пользователь в обычной организации, только устройства этой организации.
+        """
+        if not self.organization:
+            return Device.objects.none()  # если нет организации
 
-    def clean(self):
-        super().clean()
-        self.email = self.__class__.objects.normalize_email(self.email)
-
-    def email_user(self, subject, message, from_email=None, **kwargs):
-        """Send an email to this user."""
-        send_mail(subject, message, from_email, [self.email], **kwargs)
-
+        # Если is_main() → значит parent=None
+        if self.organization.is_main():
+            # Получить все «дочерние» + саму "главную"
+            org_ids = [org.pk for org in self.organization.get_all_suborganizations()]
+            return Device.objects.filter(organization_id__in=org_ids)
+        else:
+            # Обычная организация → только её устройства
+            return Device.objects.filter(organization=self.organization)
 
 
 class Device(models.Model):

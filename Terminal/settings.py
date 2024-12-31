@@ -174,7 +174,7 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 # Укажи директорию, где будут собираться статические файлы при сборке
-STATICFILES_DIRS = [os.path.join(BASE_DIR, 'App/static')]
+# STATICFILES_DIRS = [os.path.join(BASE_DIR, 'App/static')]
 
 # Директория, куда будут собираться все статики для деплоя
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')

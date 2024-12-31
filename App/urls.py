@@ -1,49 +1,53 @@
-from rest_framework import routers
 from django.urls import path, include
-from .views import *
+from rest_framework.routers import DefaultRouter
+from rest_framework_nested.routers import NestedDefaultRouter
+
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+# Импортируем ваши вьюхи
+from .views import *
 
-# Создаем маршруты вручную для вложенных путей
+# 1. Основной роутер для главных сущностей
+router = DefaultRouter()
+router.register('users', UserViewSet, basename='users')
+router.register('devices', DeviceViewSet, basename='devices')
+router.register('access-events', AccessEventViewSet, basename='access-events')
+
+router.register('regions', RegionViewSet, basename='regions')
+router.register('organizations', OrganizationViewSet, basename='organizations')
+# Если вы хотите полноценный CRUD для них — в самих ViewSet нужно иметь serializer_class и методы.
+
+# 2. Вложенный роутер для связки "device -> persons"
+#  URL вида: /devices/{device_id}/persons/
+devices_router = NestedDefaultRouter(router, 'devices', lookup='device')
+devices_router.register('persons', PersonViewSet, basename='device-persons')
+
+# 3. Вложенный роутер для связки "person -> face"
+#  URL вида: /devices/{device_id}/persons/{person_id}/face/
+persons_router = NestedDefaultRouter(devices_router, 'persons', lookup='person')
+persons_router.register('face', FaceViewSet, basename='person-face')
+
+# 4. Вложенные роуты для schedule, weekplan, если они тоже зависят от device
+#  URL вида: /devices/{device_id}/schedule/{pk}/, /devices/{device_id}/weekplan/{pk}/
+devices_router.register('schedule', ScheduleViewSet, basename='device-schedule')
+devices_router.register('weekplan', WeekPlanViewSet, basename='device-weekplan')
+
 urlpatterns = [
-    path('register/', UserRegisterView.as_view(), name='register'),  # Регистрация
-    path('', UserLoginView.as_view(), name='login'),  # Логин
-    path('main/', MainView.as_view(), name='main'),  # Главная страница
-    path('my_organizations/', MyOrganizationsView.as_view(), name='my_organizations'),  # Мои организации
-    path('children/', ChildrenView.as_view(), name='children'),  # Дети
-    path('reports/', ReportsView.as_view(), name='reports'),  # Отчеты
-    path('details/', DetailsView.as_view(), name='details'),  # Детализация
+    path('login/', UserLoginView.as_view(), name='login'),
     path('logout/', UserLogoutView, name='logout'),  # Выход из системы
 
 
-       # Маршруты для пользователей Nado na guests pomenyat
-    path('users/', UserViewSet.as_view({'post': 'create', 'get': 'list'}), name='user-list'),  # Получить список пользователей и создать нового
-    path('users/<int:pk>/', UserViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='user-detail'),  # Получить данные пользователя и обновить его
-    
-    # Маршруты для работы с токенами
-    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),  # Получение JWT токенов
-    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),  # Обновление JWT токенов
+ 
+    # ============ JWT-токены ===============
+    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
-    # Маршруты для устройств
-    path('devices/', DeviceViewSet.as_view({'get': 'list'}), name='device-list'),
-    path('devices/<int:pk>/', DeviceViewSet.as_view({'get': 'retrieve'}), name='device-detail'),
-
-    # Маршруты для расписания времени
-    path('devices/<int:pk>/weekplan/<int:wk>/', WeekPlanViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update'}), name='weekplan-detail'),
-    path('devices/<int:pk>/schedule/<int:sk>/', ScheduleViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update'}), name='schedule-detail'),
-
-    # Маршруты для персон
-    path('devices/<int:deviceid>/persons/', PersonViewSet.as_view({'get': 'list', 'post': 'create'}), name='person-list'),
-    path('devices/<int:deviceid>/persons/<int:pk>/', PersonViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name='person-detail'),
-    
-    # Маршруты для лиц
-    path('devices/<int:deviceid>/persons/<int:pk>/face/', FaceViewSet.as_view({'post': 'create', 'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='face-detail'),
-
-    # Маршруты для событий доступа
-    path('access-events/', AccessEventViewSet.as_view({'get': 'list'}), name='access-event-list'),  # Получить список событий доступа
-    path('access-events/<int:pk>/', AccessEventViewSet.as_view({'get': 'retrieve'}), name='access-event-detail'),  # Получить данные события доступа
-
+    # ============ Подключаем наши роуты ===============
+    path('', include(router.urls)),            # /users/ /devices/ /access-events/
+    path('', include(devices_router.urls)),    # /devices/{device_id}/persons/ /devices/{device_id}/schedule/ ...
+    path('', include(persons_router.urls)),    # /devices/{device_id}/persons/{person_id}/face/
 ]
+
 
 
 

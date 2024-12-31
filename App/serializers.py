@@ -2,6 +2,8 @@ from rest_framework import serializers
 from .models import *
 from datetime import datetime
 import re
+from django.contrib.auth import authenticate
+
 
 #Cериализаторы для работы с Device
 class   DeviceSerializer(serializers.ModelSerializer):
@@ -122,31 +124,51 @@ class RegionSerializer(serializers.ModelSerializer):
 
 # Сериализатор для модели Organization
 class OrganizationSerializer(serializers.ModelSerializer):
-    region = RegionSerializer()  # Включаем данные региона в сериализатор организации
+    # Показываем parent как ID (или можно вложенный OrganizationSerializer)
+    parent = serializers.PrimaryKeyRelatedField(queryset=Organization.objects.all(), allow_null=True, required=False)
+    # Или если хотите вложенно:
+    # parent = OrganizationSerializer(read_only=True)
+
+    # Покажем список детей (read-only) 
+    children = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    # Или со вложенными сериализаторами:
+    # children = OrganizationSerializer(many=True, read_only=True)
+
+    region = serializers.PrimaryKeyRelatedField(
+        queryset=Region.objects.all()
+    )   
 
     class Meta:
         model = Organization
-        fields = ['id', 'bin', 'number', 'name', 'region']
+        fields = ['id', 'bin', 'number', 'name', 'region','parent', 'children']
 
-# Сериализатор для модели User
+    def validate_parent(self, value):
+        if value and value.parent is not None:
+            raise serializers.ValidationError("Нельзя создавать вложенность глубже 1 уровня.")
+        return value
+
+import re
+from rest_framework import serializers
+from django.contrib.auth import authenticate
+from django.utils.translation import gettext_lazy as _  # если хотите i18n
+from .models import User, Organization
+
+USERNAME_REGEX = r'^[A-Za-z0-9]{5,}$'
+
 class UserSerializer(serializers.ModelSerializer):
-    organization = OrganizationSerializer(many=True, read_only=True)  # Включаем данные об организации
-
+    organization = OrganizationSerializer(read_only=True)
     class Meta:
         model = User
         fields = [
-            'id', 'username', 'email', 'FIO', 'phone', 'organization', 
+            'id', 'username', 'email', 'FIO', 'phone', 'organization',
             'is_active', 'is_staff', 'date_joined', 'updated_at', 'approved', 'can_edit'
         ]
-    def get_full_name(self):
-        return self.FIO
-    
+
 class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
-    password_confirm = serializers.CharField(write_only=True)  # Добавляем поле подтверждения пароля
+    password_confirm = serializers.CharField(write_only=True)
     organization = serializers.PrimaryKeyRelatedField(
         queryset=Organization.objects.all(),
-        many=True,
         write_only=True
     )
 
@@ -154,19 +176,35 @@ class UserCreateSerializer(serializers.ModelSerializer):
         model = User
         fields = ['username', 'email', 'password', 'password_confirm', 'FIO', 'phone', 'organization']
 
+    def validate_username(self, value):
+        if not re.match(USERNAME_REGEX, value):
+            raise serializers.ValidationError(
+                "Имя пользователя должно содержать только латинские буквы и цифры и быть не короче 5 символов."
+            )
+        return value
+
     def validate(self, data):
         if data['password'] != data['password_confirm']:
-            raise serializers.ValidationError({'password_confirm': 'Passwords do not match'})
+            raise serializers.ValidationError({'password_confirm': 'Пароли не совпадают.'})
+
+        if not (6 <= len(data['password']) <= 50):
+            raise serializers.ValidationError({'password': 'Пароль должен быть от 6 до 50 символов.'})
+
         return data
 
     def create(self, validated_data):
+        validated_data.pop('password_confirm', None)
         password = validated_data.pop('password', None)
-        organizations = validated_data.pop('organization', [])
+        org = validated_data.pop('organization', None)
+
         user = User(**validated_data)
-        if password:
-            user.set_password(password)
+        user.set_password(password)
         user.save()
-        user.organization.set(organizations)
+
+        if org:
+            user.organization = org
+            user.save()
+
         return user
 
 class UserUpdateSerializer(serializers.ModelSerializer):
@@ -174,15 +212,18 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         model = User
         fields = ['FIO', 'phone', 'is_active', 'is_staff', 'approved', 'can_edit']
 
-    def validate(self, attrs):
-        # Можно добавить дополнительные проверки здесь, если требуется
-        return super().validate(attrs)
+class UserLoginSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    password = serializers.CharField(write_only=True)
 
-
-    def get_full_name(self):
-        return self.FIO
-
-
+    def validate(self, data):
+        username = data.get('username')
+        password = data.get('password')
+        user = authenticate(username=username, password=password)
+        if not user:
+            raise serializers.ValidationError("Неверные логин или пароль.")
+        data['user'] = user
+        return data
 
 class AccessEventSerializer(serializers.ModelSerializer):
     class Meta:
