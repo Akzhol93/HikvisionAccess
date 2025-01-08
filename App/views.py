@@ -8,19 +8,22 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.contrib.auth import authenticate, login, logout
 
-import json
+from django.views import View
+from django.contrib.auth.tokens import default_token_generator
+from django.core.mail import send_mail
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+
+from django.utils.encoding import force_bytes, force_str
+from rest_framework.decorators import action
+
 
 from .models import (
     Device, Organization, Region, User, AccessEvent
 )
-from .serializers import (
-    DeviceSerializer, PersonSerializer, FaceSerializer,
-    UserRightWeekPlanCfgSerializer, UserRightPlanTemplateSerializer,
-    RegionSerializer, OrganizationSerializer, UserSerializer,
-    UserCreateSerializer, UserUpdateSerializer,
-    AccessEventSerializer,  UserLoginSerializer
-)
+from .serializers import *
+from .filters import *
 from .services.device_service import DeviceAPIService
+from django_filters.rest_framework import DjangoFilterBackend
 
 
 # =============================================================================
@@ -28,18 +31,35 @@ from .services.device_service import DeviceAPIService
 # =============================================================================
 
 class DeviceViewSet(viewsets.ModelViewSet):
-    """
-    Полноценный CRUD для модели Device:
-      - GET    /devices/        -> list
-      - POST   /devices/        -> create
-      - GET    /devices/{pk}/   -> retrieve
-      - PUT    /devices/{pk}/   -> update
-      - PATCH  /devices/{pk}/   -> partial_update
-      - DELETE /devices/{pk}/   -> destroy
-    """
     queryset = Device.objects.all()
     serializer_class = DeviceSerializer
-    # permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        """
+        Переопределяем, чтобы фильтровать список устройств по организации текущего пользователя.
+        Если организация user'а является «главной» (is_main=True),
+        то показываем устройства всех её «дочерних» (child) организаций + её самой (get_all_suborganizations()).
+        Иначе (child) — только устройства самой организации.
+        """
+        qs = super().get_queryset()
+        user = self.request.user
+
+        # Если пользователь не аутентифицирован, на всякий случай ничего не отдаём
+        if not user.is_authenticated:
+            print('not authenticated')
+            return qs.none()
+
+        org = user.organization  
+        
+        if org.is_main():  
+            # Если организация — «parent», то берём все связанные child плюс саму org
+            sub_orgs = org.get_all_suborganizations()  
+            qs = qs.filter(organization__in=sub_orgs)
+        else:
+            # child-организация => только свои устройства
+            qs = qs.filter(organization=org)
+        return qs
+        # permission_classes = (IsAuthenticated,)
 
 
 # =============================================================================
@@ -176,6 +196,8 @@ class FaceViewSet(viewsets.ViewSet):
     def retrieve(self, request, device_pk=None, person_pk=None, pk=None):
         face_lib_type = request.query_params.get('face_lib_type')
         fdid = request.query_params.get('fdid')
+        # face_lib_type = 'blackFD'
+        # fdid = '1'
 
         try:
             device = Device.objects.get(pk=device_pk)
@@ -216,6 +238,22 @@ class FaceViewSet(viewsets.ViewSet):
         service = DeviceAPIService(device)
         response_data = service.delete_face(str(person_pk))
         return Response(response_data)
+    
+    @action(detail=True, methods=['get'], url_path='fetch_image')
+    def fetch_image(self, request, device_pk=None, person_pk=None, pk=None):
+        face_url = request.query_params.get('face_url')
+        if not face_url:
+            return Response({"error": "face_url is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Пытаемся получить Device
+        try:
+            device = Device.objects.get(pk=device_pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        service = DeviceAPIService(device)
+        data = service.fetch_face_image(face_url)
+        return Response(data)
 
 
 # =============================================================================
@@ -256,19 +294,19 @@ class WeekPlanViewSet(viewsets.ViewSet):
             return Response(updated_plan)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    def partial_update(self, request, device_pk=None, pk=None):
-        try:
-            device = Device.objects.get(pk=device_pk)
-        except Device.DoesNotExist:
-            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+    # def partial_update(self, request, device_pk=None, pk=None):
+    #     try:
+    #         device = Device.objects.get(pk=device_pk)
+    #     except Device.DoesNotExist:
+    #         return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        service = DeviceAPIService(device)
-        week_plan = service.get_week_plan(pk)
-        serializer = self.serializer_class(week_plan, data=request.data, partial=True)
-        if serializer.is_valid():
-            updated_plan = service.update_week_plan(pk, serializer.validated_data)
-            return Response(updated_plan)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    #     service = DeviceAPIService(device)
+    #     week_plan = service.get_week_plan(pk)
+    #     serializer = self.serializer_class(week_plan, data=request.data, partial=True)
+    #     if serializer.is_valid():
+    #         updated_plan = service.update_week_plan(pk, serializer.validated_data)
+    #         return Response(updated_plan)
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 # =============================================================================
@@ -302,32 +340,35 @@ class ScheduleViewSet(viewsets.ViewSet):
             return Response(updated_template)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def partial_update(self, request, device_pk=None, pk=None):
-        try:
-            device = Device.objects.get(pk=device_pk)
-        except Device.DoesNotExist:
-            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+    # def partial_update(self, request, device_pk=None, pk=None):
+    #     try:
+    #         device = Device.objects.get(pk=device_pk)
+    #     except Device.DoesNotExist:
+    #         return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        service = DeviceAPIService(device)
-        schedule_template = service.get_schedule_template(pk)
-        serializer = self.serializer_class(schedule_template, data=request.data, partial=True)
-        if serializer.is_valid():
-            updated_template = service.update_schedule_template(pk, serializer.validated_data)
-            return Response(updated_template)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    #     service = DeviceAPIService(device)
+    #     schedule_template = service.get_schedule_template(pk)
+    #     serializer = self.serializer_class(schedule_template, data=request.data, partial=True)
+    #     if serializer.is_valid():
+    #         updated_template = service.update_schedule_template(pk, serializer.validated_data)
+    #         return Response(updated_template)
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 # =============================================================================
 # (6) REGION, ORG, USER, ACCESSEVENT VIEWSETS
 # =============================================================================
 
-class RegionViewSet(viewsets.ModelViewSet):
+
+
+class RegionViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [AllowAny]
+    """
+    ViewSet только для чтения Regions.
+    """
     queryset = Region.objects.all()
     serializer_class = RegionSerializer
     ordering = ['name']
-
-
-
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
@@ -345,45 +386,26 @@ class UserViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated()]
     
     def create(self, request, *args, **kwargs):
-        """
-        Переопределяем создание пользователя (create), чтобы вернуть JWT-токены.
-        Проверка password == password_confirm будет в самом сериализаторе (validate).
-        """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Вызов serializer.save() уже создаст пользователя (через метод create() в сериализаторе)
         user = serializer.save()  
-
-        # Генерируем JWT-токены (refresh / access)
-        refresh = RefreshToken.for_user(user)
-        data = {
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-        }
-
-        # Можно дополнительно вернуть что-то ещё (ID пользователя, username и т.д.)
-        # data['user_id'] = user.id
-        # data['username'] = user.username
+        # user сейчас likely is_active=False, чтобы дождаться активации по почте
 
         headers = self.get_success_headers(serializer.data)
-        return Response(data, status=status.HTTP_201_CREATED, headers=headers)
+        return Response(
+            {"detail": "Пользователь успешно создан. Проверьте вашу почту для завершения регистрации."},
+            status=status.HTTP_201_CREATED,
+            headers=headers
+        )
 
-
-class AccessEventViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = AccessEvent.objects.all()
-    serializer_class = AccessEventSerializer
-    # permission_classes = [permissions.IsAuthenticated]
-
-
-# =============================================================================
-# (7) USER REGISTER / LOGIN VIEWS (примеры на APIView)
-# =============================================================================
 
 
 
 class UserLoginView(APIView):
     serializer_class = UserLoginSerializer
+    permission_classes = [AllowAny]
+    authentication_classes = []
 
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
@@ -395,12 +417,14 @@ class UserLoginView(APIView):
                 'refresh': str(refresh),
                 'access': str(refresh.access_token)
             }, status=status.HTTP_200_OK)
+            
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class OrganizationViewSet(viewsets.ModelViewSet):
+class OrganizationViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Organization.objects.all()
     serializer_class = OrganizationSerializer
+    permission_classes =[AllowAny]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -411,6 +435,38 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         return qs
     
 
+
+class AccessEventViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = AccessEvent.objects.all()
+    serializer_class = AccessEventSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = AccessEventFilter
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Аналогично DeviceViewSet можно фильтровать по организации пользователя.
+        Если пользователь относится к parent-организации, показываем все events 
+        их child-организаций. Иначе (child) — только свои.
+        """
+        qs = super().get_queryset()
+        user = self.request.user
+        if not user.is_authenticated:
+            return qs.none()
+
+        org = user.organization
+        if org.is_main():
+            # Допустим, org.get_all_suborganizations() вернёт саму org + все child
+            sub_orgs = org.get_all_suborganizations()
+            # Фильтруем только события по устройствам, принадлежащим этим организациям
+            qs = qs.filter(device__organization__in=sub_orgs)
+        else:
+            qs = qs.filter(device__organization=org)
+
+        return qs
+
+
+
 def UserLogoutView(request):
     logout(request)
     response = redirect('login')  # Перенаправление на страницу логина
@@ -418,3 +474,73 @@ def UserLogoutView(request):
     response.delete_cookie('refresh')
     return response
 
+class ActivateUserView(View):
+    def get(self, request, uidb64, token):
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            user = None
+
+        if user and default_token_generator.check_token(user, token):
+            user.is_active = True
+            user.save()
+            # Можно редиректнуть на фронт, чтобы показать «Аккаунт активирован»
+            return redirect("http://localhost:8080/login?activated=1")
+        else:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_400_BAD_REQUEST)
+        
+
+class PasswordResetRequestView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    def post(self, request):
+        email = request.data.get('email')
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # Обычно не сообщаем, что user не существует (безопасность),
+            # но если хотите, можете вернуть ошибку.
+            return Response({"detail": "Если пользователь с указанной почтой существует, письмо отправлено."}, status=status.HTTP_200_OK)
+
+        token = default_token_generator.make_token(user)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        reset_link = f"http://localhost:8080/password-reset-confirm?uid={uid}&token={token}"
+
+        send_mail(
+            "Восстановление пароля",
+            f"Для сброса пароля перейдите по ссылке: {reset_link}",
+            "no-reply@yourapp.com",
+            [user.email],
+        )
+        return Response({"detail": "Письмо со ссылкой для сброса пароля отправлено. \nПройдите по отправленной на почту ссылке!"}, status=status.HTTP_200_OK)
+
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    def post(self, request):
+        uidb64 = request.data.get('uid')
+        token = request.data.get('token')
+        new_password = request.data.get('new_password')
+
+        if not uidb64 or not token or not new_password:
+            return Response({"detail": "Missing parameters"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            user = None
+
+        if user is None:
+            return Response({"detail": "Invalid user"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not default_token_generator.check_token(user, token):
+            return Response({"detail": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Всё ок -> устанавливаем новый пароль
+        user.set_password(new_password)
+        user.save()
+
+        return Response({"detail": "Пароль успешно изменён"}, status=status.HTTP_200_OK)

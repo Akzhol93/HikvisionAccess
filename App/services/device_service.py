@@ -2,6 +2,8 @@ import requests
 import json
 import random
 import string
+import base64
+
 
 from requests.auth import HTTPDigestAuth
 
@@ -26,8 +28,8 @@ class DeviceAPIService:
         session = requests.Session()
         session.auth = HTTPDigestAuth(self.device.login, self.device.password)
         session.headers.update({
-            'Content-Type': "application/xml; charset=UTF-8",
-            'Accept': 'text/html'
+            'Content-Type': 'application/json; charset=UTF-8',
+            'Accept': 'application/json'
         })
         return session
 
@@ -127,6 +129,7 @@ class DeviceAPIService:
         session = self._create_session()
         data = {}
 
+        #если employee_no = None то возвращаем список всех
         if employee_no is None:
             # Возвращаем всех
             persons_list = []
@@ -157,6 +160,7 @@ class DeviceAPIService:
                     break
             session.close()
             return persons_list
+        #если нет то возвращаем с указанным employee_no
         else:
             # Возвращаем одного
             body = {
@@ -396,4 +400,24 @@ class DeviceAPIService:
                 data = response.json()
         finally:
             session.close()
+        return data
+    
+    def fetch_face_image(self, face_url):
+        """
+        Скачивает изображение (JPEG) по указанному face_url,
+        используя HTTP Digest авторизацию, и возвращает base64-строку.
+        """
+        session = self._create_session()
+        data = {}
+        try:
+            # Получаем (stream=False, чтобы сразу прочитать в r.content)
+            r = session.get(face_url, stream=False)
+            r.raise_for_status()
+            # Кодируем в base64
+            data["image_data"] = base64.b64encode(r.content).decode('utf-8')
+        except requests.exceptions.RequestException as e:
+            data["error"] = str(e)
+        finally:
+            session.close()
+
         return data

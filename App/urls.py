@@ -9,17 +9,17 @@ from .views import *
 
 # 1. Основной роутер для главных сущностей
 router = DefaultRouter()
-router.register('users', UserViewSet, basename='users')
-router.register('devices', DeviceViewSet, basename='devices')
-router.register('access-events', AccessEventViewSet, basename='access-events')
+router.register('api/users', UserViewSet, basename='users')
+router.register('api/devices', DeviceViewSet, basename='devices')
+router.register('api/access-events', AccessEventViewSet, basename='access-events')
 
-router.register('regions', RegionViewSet, basename='regions')
-router.register('organizations', OrganizationViewSet, basename='organizations')
+router.register('api/regions', RegionViewSet, basename='regions')
+router.register('api/organizations', OrganizationViewSet, basename='organizations')
 # Если вы хотите полноценный CRUD для них — в самих ViewSet нужно иметь serializer_class и методы.
 
 # 2. Вложенный роутер для связки "device -> persons"
 #  URL вида: /devices/{device_id}/persons/
-devices_router = NestedDefaultRouter(router, 'devices', lookup='device')
+devices_router = NestedDefaultRouter(router, 'api/devices', lookup='device')
 devices_router.register('persons', PersonViewSet, basename='device-persons')
 
 # 3. Вложенный роутер для связки "person -> face"
@@ -33,14 +33,17 @@ devices_router.register('schedule', ScheduleViewSet, basename='device-schedule')
 devices_router.register('weekplan', WeekPlanViewSet, basename='device-weekplan')
 
 urlpatterns = [
-    path('login/', UserLoginView.as_view(), name='login'),
-    path('logout/', UserLogoutView, name='logout'),  # Выход из системы
+    path('api/login/', UserLoginView.as_view(), name='login'),
+    path('api/logout/', UserLogoutView, name='logout'),  # Выход из системы
+
+    path('api/users/activate/<uidb64>/<token>/', ActivateUserView.as_view(), name='user_activate'),
+    path('api/users/password_reset/', PasswordResetRequestView.as_view(), name='password_reset'),
+    path('api/users/password_reset_confirm/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
 
 
- 
     # ============ JWT-токены ===============
-    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
     # ============ Подключаем наши роуты ===============
     path('', include(router.urls)),            # /users/ /devices/ /access-events/

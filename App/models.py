@@ -20,6 +20,7 @@ from django.utils.translation import gettext_lazy as _
 Validator_IIN_BIIN = RegexValidator(r'^\d{12}$', message="IIN or BIN must be 12 digits")
 
 
+
 class Region(models.Model):
     number = models.PositiveSmallIntegerField(unique=True)
     name   = models.CharField(max_length=100, unique=True)  # Добавлено max_length и уникальность для name

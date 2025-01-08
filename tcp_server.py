@@ -31,6 +31,7 @@ async def receive_event_log(request: Request):
             )
 
         dct = json.loads(event_log_str)
+ 
 
         # Если есть AccessControllerEvent, проверяем тип события
         ace = dct.get("AccessControllerEvent", {})

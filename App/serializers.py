@@ -4,13 +4,18 @@ from datetime import datetime
 import re
 from django.contrib.auth import authenticate
 
+from django.core.mail import send_mail
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.conf import settings
+from django.utils.translation import gettext_lazy as _  # если хотите i18n
 
 #Cериализаторы для работы с Device
 class   DeviceSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Device
         fields = '__all__'
-
 
 #Cериализаторы для работы с Person
 class ValidSerializer(serializers.Serializer):
@@ -49,7 +54,8 @@ class RightPlanSerializer(serializers.Serializer):
     doorNo = serializers.IntegerField()
     planTemplateNo = serializers.CharField()
 
-class   PersonSerializer(serializers.Serializer):
+
+class PersonSerializer(serializers.Serializer):
     employeeNo = serializers.CharField()
     name = serializers.CharField()
     userType = serializers.CharField()
@@ -69,18 +75,15 @@ class   PersonSerializer(serializers.Serializer):
     numOfFace = serializers.IntegerField(required=False)
     PersonInfoExtends = serializers.ListField(child=serializers.DictField(), required=False)
 
+    def validate_employeeNo(self, value):
+        if not re.fullmatch(r'\d{12}', value):
+            raise serializers.ValidationError("Поле employeeNo должно состоять ровно из 12 цифр.")
+        return value
+
     def validate_userType(self, value):
         if value not in ["normal", "visitor", "blackList", "maintenance"]:
             raise serializers.ValidationError("userType must be 'normal', 'visitor', 'blackList' or 'maintenance'.")
         return value
-    
-    
-#Cериализатор для работы с изображениями лица
-class FaceSerializer(serializers.Serializer):
-    face_lib_type = serializers.CharField(max_length=50)
-    fdid = serializers.CharField(max_length=50)
-    employeeNo = serializers.CharField(max_length=50, required=False)
-    image = serializers.ImageField()
 
 
 #Cериализаторы для работы с WeekPlan
@@ -147,11 +150,6 @@ class OrganizationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Нельзя создавать вложенность глубже 1 уровня.")
         return value
 
-import re
-from rest_framework import serializers
-from django.contrib.auth import authenticate
-from django.utils.translation import gettext_lazy as _  # если хотите i18n
-from .models import User, Organization
 
 USERNAME_REGEX = r'^[A-Za-z0-9]{5,}$'
 
@@ -193,17 +191,40 @@ class UserCreateSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        validated_data.pop('password_confirm', None)
-        password = validated_data.pop('password', None)
-        org = validated_data.pop('organization', None)
-
-        user = User(**validated_data)
-        user.set_password(password)
+        user = User(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            FIO=validated_data['FIO'],
+            phone=validated_data['phone'],
+            is_active=False  # <-- деактивируем
+        )
+        user.set_password(validated_data['password'])
         user.save()
 
+        # Допустим, org:
+        org = validated_data.get('organization')
         if org:
             user.organization = org
             user.save()
+
+        # Генерируем токен
+        token = default_token_generator.make_token(user)  
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+
+        # Берём домен из настроек
+        domain = getattr(settings, "BACKEND_DOMAIN", "http://127.0.0.1:8000")
+
+        # Формируем ссылку активации (на бэкенд)
+        activate_url = f"http://{domain}/api/users/activate/{uid}/{token}/"
+
+        # Отправляем письмо
+        send_mail(
+            subject="Активация учётной записи",
+            message=f"Для активации перейдите по ссылке: {activate_url}",
+            from_email="no-reply@yourapp.com",
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
 
         return user
 
@@ -237,3 +258,10 @@ class AccessEventSerializer(serializers.ModelSerializer):
             'statusValue', 'mask', 'purePwdVerifyEnable'
         ]
         read_only_fields = fields
+
+#Cериализатор для работы с изображениями лица
+class FaceSerializer(serializers.Serializer):
+    face_lib_type = serializers.CharField(max_length=50)
+    fdid = serializers.CharField(max_length=50)
+    employeeNo = serializers.CharField(max_length=50, required=False)
+    image = serializers.ImageField()
