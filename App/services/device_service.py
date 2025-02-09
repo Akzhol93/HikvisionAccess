@@ -262,29 +262,32 @@ class DeviceAPIService:
         finally:
             session.close()
         return data
-
     def add_face(self, face_lib_type, fdid, employee_no, image_data):
         """
-        Добавить лицо (face) к пользователю.
+        Добавить лицо (face) к пользователю (POST FaceDataRecord).
+        Внимание: используем form-data, именуя части "faceURL" и "img".
         """
         path = f'http://{self.device.ip_address}:{self.device.port_no}/ISAPI/Intelligent/FDLib/FaceDataRecord?format=json'
         session = self._create_session()
         boundary = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(30))
 
+        # Формируем JSON для первой части (faceURL)
         json_data = {
             "faceLibType": face_lib_type,
             "FDID": fdid,
-            "FPID": str(employee_no),
-            "bornTime": "2004-05-03"
+            "FPID": employee_no,
+            "name": "John Doe",    # Пример, можно передать имя
+            "gender": "male",      # Пример
+            "bornTime": "2000-01-01",
         }
 
         body = (
             f'--{boundary}\r\n'
-            'Content-Disposition: form-data; name="FaceDataRecord"\r\n'
+            'Content-Disposition: form-data; name="faceURL"\r\n'
             'Content-Type: application/json\r\n\r\n'
             + json.dumps(json_data) + '\r\n'
             f'--{boundary}\r\n'
-            'Content-Disposition: form-data; name="face_image"; filename="image.jpg"\r\n'
+            'Content-Disposition: form-data; name="img"; filename="faceImage.jpg"\r\n'
             'Content-Type: image/jpeg\r\n\r\n'
         ).encode('utf-8') + image_data + f'\r\n--{boundary}--\r\n'.encode('utf-8')
 
@@ -299,8 +302,11 @@ class DeviceAPIService:
             data = response.json()
         except requests.exceptions.RequestException as e:
             print(f'HTTP Request failed: {e}')
-            if response is not None:
-                data = response.json()
+            if 'response' in locals() and response is not None:
+                try:
+                    data = response.json()
+                except:
+                    data = {"error": str(e)}
         finally:
             session.close()
 
@@ -308,25 +314,29 @@ class DeviceAPIService:
 
     def edit_face(self, face_lib_type, fdid, employee_no, image_data):
         """
-        Изменить (перезаписать) данные лица (face) пользователя
+        Изменить (перезаписать) данные лица.
+        Документация: PUT /ISAPI/Intelligent/FDLib/FDModify?format=json
         """
         path = f'http://{self.device.ip_address}:{self.device.port_no}/ISAPI/Intelligent/FDLib/FDModify?format=json'
         session = self._create_session()
         boundary = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(30))
 
+        # Аналогично: form-data, именуем части "faceURL" и "img"
         json_data = {
             "faceLibType": face_lib_type,
             "FDID": fdid,
-            "FPID": str(employee_no),
+            "FPID": employee_no,
+            "name": "John Updated",
+            "bornTime": "2000-01-01"
         }
 
         body = (
             f'--{boundary}\r\n'
-            'Content-Disposition: form-data; name="FaceDataRecord"\r\n'
+            'Content-Disposition: form-data; name="faceURL"\r\n'
             'Content-Type: application/json\r\n\r\n'
             + json.dumps(json_data) + '\r\n'
             f'--{boundary}\r\n'
-            'Content-Disposition: form-data; name="face_image"; filename="image.jpg"\r\n'
+            'Content-Disposition: form-data; name="img"; filename="faceImage.jpg"\r\n'
             'Content-Type: image/jpeg\r\n\r\n'
         ).encode('utf-8') + image_data + f'\r\n--{boundary}--\r\n'.encode('utf-8')
 
@@ -341,15 +351,18 @@ class DeviceAPIService:
             data = response.json()
         except requests.exceptions.RequestException as e:
             print(f'HTTP Request failed: {e}')
-            if response is not None:
-                data = response.json()
+            if 'response' in locals() and response is not None:
+                try:
+                    data = response.json()
+                except:
+                    data = {"error": str(e)}
         finally:
             session.close()
         return data
 
     def get_face(self, face_lib_type, fdid, fpid):
         """
-        Получить данные о лице (face) по FID/FPID
+        POST /ISAPI/Intelligent/FDLib/FDSearch?format=json
         """
         path = f'http://{self.device.ip_address}:{self.device.port_no}/ISAPI/Intelligent/FDLib/FDSearch?format=json'
         session = self._create_session()
@@ -359,61 +372,69 @@ class DeviceAPIService:
             "maxResults": 1,
             "faceLibType": face_lib_type,
             "FDID": fdid,
-            "FPID": fpid,
+            "FPID": fpid
         }
 
         data = {}
         try:
-            response = session.post(path, data=json.dumps(body))
+            response = session.post(path, json=body)
             response.raise_for_status()
             data = response.json()
         except requests.exceptions.RequestException as e:
             print(f'HTTP Request failed: {e}')
-            if response is not None:
-                data = response.json()
+            if 'response' in locals() and response is not None:
+                try:
+                    data = response.json()
+                except:
+                    data = {"error": str(e)}
         finally:
             session.close()
         return data
 
-    def delete_face(self, employee_no):
+    def delete_face(self, face_lib_type, fdid, employee_no):
         """
-        Удалить лицо (face) по FPID
+        Удалить лицо (face) по FPID:
+        PUT /ISAPI/Intelligent/FDLib/FDSearch/Delete?format=json&FDID=<fdid>&faceLibType=<face_lib_type>
         """
-        path = f'http://{self.device.ip_address}:{self.device.port_no}/ISAPI/Intelligent/FDLib/FDSearch/Delete?format=json&FDID=1&faceLibType=blackFD'
+        path = (
+            f'http://{self.device.ip_address}:{self.device.port_no}'
+            f'/ISAPI/Intelligent/FDLib/FDSearch/Delete?format=json'
+            f'&FDID={fdid}&faceLibType={face_lib_type}'
+        )
         session = self._create_session()
         json_data = {
             "FPID": [
-                {
-                    "value": str(employee_no),
-                }
+                {"value": str(employee_no)}
             ],
+            # В некоторых прошивках нужен operateType
+            "operateType": "byDevice"
         }
 
         data = {}
         try:
-            response = session.put(path, data=json.dumps(json_data))
+            response = session.put(path, json=json_data)
             response.raise_for_status()
             data = response.json()
         except requests.exceptions.RequestException as e:
             print(f'HTTP Request failed: {e}')
-            if response is not None:
-                data = response.json()
+            if 'response' in locals() and response is not None:
+                try:
+                    data = response.json()
+                except:
+                    data = {"error": str(e)}
         finally:
             session.close()
         return data
-    
+
     def fetch_face_image(self, face_url):
         """
-        Скачивает изображение (JPEG) по указанному face_url,
-        используя HTTP Digest авторизацию, и возвращает base64-строку.
+        Скачиваем фото по face_url, возвращаем base64
         """
         session = self._create_session()
         data = {}
         try:
-            # Получаем (stream=False, чтобы сразу прочитать в r.content)
             r = session.get(face_url, stream=False)
             r.raise_for_status()
-            # Кодируем в base64
             data["image_data"] = base64.b64encode(r.content).decode('utf-8')
         except requests.exceptions.RequestException as e:
             data["error"] = str(e)

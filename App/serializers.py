@@ -85,7 +85,13 @@ class PersonSerializer(serializers.Serializer):
             raise serializers.ValidationError("userType must be 'normal', 'visitor', 'blackList' or 'maintenance'.")
         return value
 
-
+#Cериализатор для работы с изображениями лица
+class FaceSerializer(serializers.Serializer):
+    face_lib_type = serializers.CharField(max_length=50)
+    fdid = serializers.CharField(max_length=50)
+    employeeNo = serializers.CharField(max_length=50, required=False)
+    image = serializers.ImageField()
+    
 #Cериализаторы для работы с WeekPlan
 class TimeSegmentSerializer(serializers.Serializer):
     beginTime = serializers.CharField(max_length=8)
@@ -110,7 +116,7 @@ class UserRightWeekPlanCfgSerializer(serializers.Serializer):
 #Cериализаторы для работы с Schedule
 class UserRightPlanTemplateInnerSerializer(serializers.Serializer):
     enable = serializers.BooleanField()
-    templateName = serializers.CharField(max_length=50)
+    templateName = serializers.CharField(max_length=50, allow_blank=True)
     weekPlanNo = serializers.IntegerField()
     holidayGroupNo = serializers.CharField(max_length=50, allow_blank=True, allow_null=True)
 
@@ -259,9 +265,3 @@ class AccessEventSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-#Cериализатор для работы с изображениями лица
-class FaceSerializer(serializers.Serializer):
-    face_lib_type = serializers.CharField(max_length=50)
-    fdid = serializers.CharField(max_length=50)
-    employeeNo = serializers.CharField(max_length=50, required=False)
-    image = serializers.ImageField()

@@ -24,6 +24,7 @@ from .serializers import *
 from .filters import *
 from .services.device_service import DeviceAPIService
 from django_filters.rest_framework import DjangoFilterBackend
+from django.shortcuts import get_object_or_404
 
 
 # =============================================================================
@@ -157,47 +158,34 @@ class PersonViewSet(viewsets.ViewSet):
         return Response(response, status=status.HTTP_204_NO_CONTENT)
 
 
-# =============================================================================
-# (3) FACE VIEWSET (вложенный глубже: /devices/{device_pk}/persons/{person_pk}/face/...)
-# =============================================================================
-#
-#  Если вы используете ещё один NestedDefaultRouter для persons:
-#    persons_router = NestedDefaultRouter(devices_router, 'persons', lookup='person')
-#    persons_router.register('face', FaceViewSet, basename='person-face')
-#
-#  => URL: /devices/{device_pk}/persons/{person_pk}/face/{pk}/
-#
-#  => Аргументы: device_pk, person_pk, pk (при необходимости)
-# =============================================================================
 
 class FaceViewSet(viewsets.ViewSet):
     serializer_class = FaceSerializer
 
     def create(self, request, device_pk=None, person_pk=None):
-        serializer = FaceSerializer(data=request.data, context={'request': request})
-        if serializer.is_valid():
-            face_lib_type = serializer.validated_data['face_lib_type']
-            fdid = serializer.validated_data['fdid']
-            image = serializer.validated_data['image']
+        # POST -> /devices/{device_id}/persons/{person_pk}/face/
+        serializer = FaceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-            # Получаем устройство
-            try:
-                device = Device.objects.get(pk=device_pk)
-            except Device.DoesNotExist:
-                return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+        face_lib_type = serializer.validated_data['face_lib_type']
+        fdid = serializer.validated_data['fdid']
+        image = serializer.validated_data['image']
 
-            service = DeviceAPIService(device)
-            image_data = image.read()
-            # pk = не всегда используется, но если вы хотите, чтобы pk = employeeNo, тогда:
-            response_data = service.add_face(face_lib_type, fdid, str(person_pk), image_data)
-            return Response(response_data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            device = Device.objects.get(pk=device_pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        service = DeviceAPIService(device)
+
+        image_data = image.read()
+        response_data = service.add_face(face_lib_type, fdid, str(person_pk), image_data)
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, device_pk=None, person_pk=None, pk=None):
-        face_lib_type = request.query_params.get('face_lib_type')
-        fdid = request.query_params.get('fdid')
-        # face_lib_type = 'blackFD'
-        # fdid = '1'
+        # GET -> /devices/{device_id}/persons/{person_pk}/face/{pk}
+        face_lib_type = request.query_params.get('face_lib_type', 'blackFD')
+        fdid = request.query_params.get('fdid', '1')
 
         try:
             device = Device.objects.get(pk=device_pk)
@@ -206,46 +194,63 @@ class FaceViewSet(viewsets.ViewSet):
 
         service = DeviceAPIService(device)
         response_data = service.get_face(face_lib_type, fdid, str(person_pk))
+        print('retrieve  response_data:', response_data)
         return Response(response_data)
 
     def update(self, request, device_pk=None, person_pk=None, pk=None):
-        serializer = FaceSerializer(data=request.data, context={'request': request})
-        if serializer.is_valid():
-            face_lib_type = serializer.validated_data['face_lib_type']
-            fdid = serializer.validated_data['fdid']
-            image = serializer.validated_data.get('image')
+        serializer = FaceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-            try:
-                device = Device.objects.get(pk=device_pk)
-            except Device.DoesNotExist:
-                return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
+        face_lib_type = serializer.validated_data['face_lib_type']
+        fdid = serializer.validated_data['fdid']
+        image = serializer.validated_data['image']
 
-            service = DeviceAPIService(device)
-            image_data = image.read()
-            response_data = service.edit_face(face_lib_type, fdid, str(person_pk), image_data)
-            return Response(response_data, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        device = get_object_or_404(Device, pk=device_pk)
+        service = DeviceAPIService(device)
+
+        # 1) Проверяем, есть ли уже лицо
+        search_response = service.get_face(face_lib_type, fdid, str(person_pk))
+        matches = search_response.get("MatchList", [])
+        face_already_exists = (len(matches) > 0)
+
+        image_data = image.read()
+
+        try:
+            if face_already_exists:
+                # Вызываем edit_face (PUT)
+                response_data = service.edit_face(face_lib_type, fdid, str(person_pk), image_data)
+            else:
+                # Вызываем add_face (POST)
+                response_data = service.add_face(face_lib_type, fdid, str(person_pk), image_data)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
 
     def partial_update(self, request, device_pk=None, person_pk=None, pk=None):
         return self.update(request, device_pk, person_pk, pk)
 
     def destroy(self, request, device_pk=None, person_pk=None, pk=None):
+        # DELETE -> /devices/{device_id}/persons/{person_pk}/face/{pk}
+        face_lib_type = request.query_params.get('face_lib_type', 'blackFD')
+        fdid = request.query_params.get('fdid', '1')
+
         try:
             device = Device.objects.get(pk=device_pk)
         except Device.DoesNotExist:
             return Response({"error": "Device not found"}, status=status.HTTP_404_NOT_FOUND)
 
         service = DeviceAPIService(device)
-        response_data = service.delete_face(str(person_pk))
+        response_data = service.delete_face(face_lib_type, fdid, str(person_pk))
         return Response(response_data)
-    
+
     @action(detail=True, methods=['get'], url_path='fetch_image')
     def fetch_image(self, request, device_pk=None, person_pk=None, pk=None):
         face_url = request.query_params.get('face_url')
         if not face_url:
             return Response({"error": "face_url is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Пытаемся получить Device
         try:
             device = Device.objects.get(pk=device_pk)
         except Device.DoesNotExist:
@@ -253,6 +258,7 @@ class FaceViewSet(viewsets.ViewSet):
 
         service = DeviceAPIService(device)
         data = service.fetch_face_image(face_url)
+        print('fetch  data:',data)
         return Response(data)
 
 
@@ -335,6 +341,9 @@ class ScheduleViewSet(viewsets.ViewSet):
 
         service = DeviceAPIService(device)
         serializer = self.serializer_class(data=request.data)
+        if not serializer.is_valid():
+            print(serializer.errors)  # <-- Посмотрим, что именно не нравится сериализатору
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         if serializer.is_valid():
             updated_template = service.update_schedule_template(pk, serializer.validated_data)
             return Response(updated_template)
