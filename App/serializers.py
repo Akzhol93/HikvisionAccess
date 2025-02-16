@@ -143,13 +143,18 @@ class OrganizationSerializer(serializers.ModelSerializer):
     # Или со вложенными сериализаторами:
     # children = OrganizationSerializer(many=True, read_only=True)
 
+    is_main = serializers.SerializerMethodField()
+    def get_is_main(self, obj):
+        return obj.is_main()  # тот самый метод модели
+
+
     region = serializers.PrimaryKeyRelatedField(
         queryset=Region.objects.all()
     )   
 
     class Meta:
         model = Organization
-        fields = ['id', 'bin', 'number', 'name', 'region','parent', 'children']
+        fields = ['id', 'bin', 'number', 'name', 'region','parent', 'children', 'is_main',]
 
     def validate_parent(self, value):
         if value and value.parent is not None:

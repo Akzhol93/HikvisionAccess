@@ -407,7 +407,17 @@ class UserViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
             headers=headers
         )
-
+    
+from rest_framework.decorators import api_view
+@api_view(['GET'])
+def user_info(request):
+    """
+    Пример: возвращаем данные текущего пользователя, 
+    включая organization и is_main
+    """
+    user = request.user
+    serializer = UserSerializer(user)
+    return Response(serializer.data)
 
 
 
@@ -436,12 +446,13 @@ class OrganizationViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes =[AllowAny]
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        region_id = self.request.query_params.get('region_id')
-        if region_id:
-            # фильтруем по региону
-            qs = qs.filter(region_id=region_id)
-        return qs
+        queryset = super().get_queryset()
+        parent_id = self.request.query_params.get('parent_id', None)
+        if parent_id is not None:
+            queryset = queryset.filter(parent_id=parent_id)
+        return queryset
+    
+
     
 
 

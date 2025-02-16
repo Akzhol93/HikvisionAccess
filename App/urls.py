@@ -49,6 +49,8 @@ urlpatterns = [
     path('', include(router.urls)),            # /users/ /devices/ /access-events/
     path('', include(devices_router.urls)),    # /devices/{device_id}/persons/ /devices/{device_id}/schedule/ ...
     path('', include(persons_router.urls)),    # /devices/{device_id}/persons/{person_id}/face/
+   
+    path('api/user_info/', user_info, name='user_info'),
 ]
 
 
