@@ -36,29 +36,29 @@ class DeviceViewSet(viewsets.ModelViewSet):
     serializer_class = DeviceSerializer
 
     def get_queryset(self):
-        """
-        Переопределяем, чтобы фильтровать список устройств по организации текущего пользователя.
-        Если организация user'а является «главной» (is_main=True),
-        то показываем устройства всех её «дочерних» (child) организаций + её самой (get_all_suborganizations()).
-        Иначе (child) — только устройства самой организации.
-        """
         qs = super().get_queryset()
         user = self.request.user
-
-        # Если пользователь не аутентифицирован, на всякий случай ничего не отдаём
         if not user.is_authenticated:
-            print('not authenticated')
             return qs.none()
-
-        org = user.organization  
         
-        if org.is_main():  
-            # Если организация — «parent», то берём все связанные child плюс саму org
-            sub_orgs = org.get_all_suborganizations()  
+        org = user.organization
+        # Если пользователь из главной организации, по умолчанию возвращаем все устройства её и «дочерних»
+        if org.is_main():
+            sub_orgs = org.get_all_suborganizations()
             qs = qs.filter(organization__in=sub_orgs)
         else:
-            # child-организация => только свои устройства
+            # Если нет, то только свои
             qs = qs.filter(organization=org)
+
+        # Дополнительно смотрим, пришёл ли параметр organization_id
+        requested_org_id = self.request.query_params.get('organization_id')
+        if requested_org_id:
+            # Теперь сузим выборку до конкретной organization_id
+            qs = qs.filter(organization_id=requested_org_id)
+            # Но нужно учесть, чтобы это был «разрешённый» organization_id,
+            # т.е. он входит в те, которые user может видеть.
+            # Если нужно делать более тонкую проверку, то добавьте.
+        
         return qs
         # permission_classes = (IsAuthenticated,)
 
@@ -136,7 +136,8 @@ class PersonViewSet(viewsets.ViewSet):
 
         service = DeviceAPIService(device)
         try:
-            response = service.edit_person(pk, **serializer.validated_data)
+   
+            response = service.edit_person( **serializer.validated_data)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

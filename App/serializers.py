@@ -121,7 +121,7 @@ class UserRightPlanTemplateInnerSerializer(serializers.Serializer):
     holidayGroupNo = serializers.CharField(max_length=50, allow_blank=True, allow_null=True)
 
 class UserRightPlanTemplateSerializer(serializers.Serializer):
-    UserRightPlanTemplate = UserRightPlanTemplateInnerSerializer()
+    UserRightPlanTemplate = UserRightPlanTemplateInnerSerializer(allow_null=True)
 
 
 

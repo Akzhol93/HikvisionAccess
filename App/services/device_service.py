@@ -117,7 +117,7 @@ class DeviceAPIService:
             session.close()
         return data
 
-    def get_persons(self, employee_no=None):
+    def get_persons(self, employeeNo=None):
         """
         Получение списка/одного пользователя с устройства
         """
@@ -129,8 +129,8 @@ class DeviceAPIService:
         session = self._create_session()
         data = {}
 
-        #если employee_no = None то возвращаем список всех
-        if employee_no is None:
+        #если employeeNo = None то возвращаем список всех
+        if employeeNo is None:
             # Возвращаем всех
             persons_list = []
             position = 0
@@ -160,7 +160,7 @@ class DeviceAPIService:
                     break
             session.close()
             return persons_list
-        #если нет то возвращаем с указанным employee_no
+        #если нет то возвращаем с указанным employeeNo
         else:
             # Возвращаем одного
             body = {
@@ -168,7 +168,7 @@ class DeviceAPIService:
                     "searchID": "0",
                     "searchResultPosition": 0,
                     "maxResults": 1,
-                    "EmployeeNoList": [{"employeeNo": str(employee_no)}]
+                    "EmployeeNoList": [{"employeeNo": str(employeeNo)}]
                 }
             }
             try:
@@ -181,7 +181,7 @@ class DeviceAPIService:
                 session.close()
             return data
 
-    def add_person(self, employee_no, name, user_type, valid, **kwargs):
+    def add_person(self, employeeNo, name, userType, Valid, **kwargs):
         """
         Добавить нового пользователя (person) на устройство
         """
@@ -189,10 +189,10 @@ class DeviceAPIService:
         session = self._create_session()
         body = {
             "UserInfo": {
-                "employeeNo": str(employee_no),
+                "employeeNo": str(employeeNo),
                 "name": name,
-                "userType": user_type,
-                "Valid": valid,
+                "userType": userType,
+                "Valid": Valid,
                 "doorRight": "1",
                 "RightPlan": [
                     {
@@ -217,14 +217,14 @@ class DeviceAPIService:
             session.close()
         return data
 
-    def edit_person(self, employee_no, **kwargs):
+    def edit_person(self, employeeNo, **kwargs):
         """
         Редактировать данные пользователя
         """
         path = f'http://{self.device.ip_address}:{self.device.port_no}/ISAPI/AccessControl/UserInfo/Modify?format=json'
         session = self._create_session()
         body = {
-            "UserInfo": {"employeeNo": str(employee_no)}
+            "UserInfo": {"employeeNo": str(employeeNo)}
         }
         body["UserInfo"].update(kwargs)
 
@@ -241,12 +241,12 @@ class DeviceAPIService:
             session.close()
         return data
 
-    def delete_person(self, employee_no):
+    def delete_person(self, employeeNo):
         path = f'http://{self.device.ip_address}:{self.device.port_no}/ISAPI/AccessControl/UserInfo/Delete?format=json'
         session = self._create_session()
         body = {
             "UserInfoDelCond": {
-                "EmployeeNoList": [{"employeeNo": str(employee_no)}]
+                "EmployeeNoList": [{"employeeNo": str(employeeNo)}]
             }
         }
 
@@ -262,7 +262,7 @@ class DeviceAPIService:
         finally:
             session.close()
         return data
-    def add_face(self, face_lib_type, fdid, employee_no, image_data):
+    def add_face(self, face_lib_type, fdid, employeeNo, image_data):
         """
         Добавить лицо (face) к пользователю (POST FaceDataRecord).
         Внимание: используем form-data, именуя части "faceURL" и "img".
@@ -275,7 +275,7 @@ class DeviceAPIService:
         json_data = {
             "faceLibType": face_lib_type,
             "FDID": fdid,
-            "FPID": employee_no,
+            "FPID": employeeNo,
             "name": "John Doe",    # Пример, можно передать имя
             "gender": "male",      # Пример
             "bornTime": "2000-01-01",
@@ -312,7 +312,7 @@ class DeviceAPIService:
 
         return data
 
-    def edit_face(self, face_lib_type, fdid, employee_no, image_data):
+    def edit_face(self, face_lib_type, fdid, employeeNo, image_data):
         """
         Изменить (перезаписать) данные лица.
         Документация: PUT /ISAPI/Intelligent/FDLib/FDModify?format=json
@@ -325,7 +325,7 @@ class DeviceAPIService:
         json_data = {
             "faceLibType": face_lib_type,
             "FDID": fdid,
-            "FPID": employee_no,
+            "FPID": employeeNo,
             "name": "John Updated",
             "bornTime": "2000-01-01"
         }
@@ -391,7 +391,7 @@ class DeviceAPIService:
             session.close()
         return data
 
-    def delete_face(self, face_lib_type, fdid, employee_no):
+    def delete_face(self, face_lib_type, fdid, employeeNo):
         """
         Удалить лицо (face) по FPID:
         PUT /ISAPI/Intelligent/FDLib/FDSearch/Delete?format=json&FDID=<fdid>&faceLibType=<face_lib_type>
@@ -404,7 +404,7 @@ class DeviceAPIService:
         session = self._create_session()
         json_data = {
             "FPID": [
-                {"value": str(employee_no)}
+                {"value": str(employeeNo)}
             ],
             # В некоторых прошивках нужен operateType
             "operateType": "byDevice"
