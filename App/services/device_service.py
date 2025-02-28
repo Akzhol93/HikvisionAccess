@@ -40,6 +40,7 @@ class DeviceAPIService:
         path = f'http://{self.device.ip_address}:{self.device.port_no}/ISAPI/AccessControl/UserInfo/capabilities?format=json'
         session = self._create_session()
         data = {}
+        success = False
         try:
             response = session.get(path)
             response.raise_for_status()
@@ -49,11 +50,12 @@ class DeviceAPIService:
             self.device.max_record_num = data['UserInfo']['maxRecordNum']
             self.device.max_results = data['UserInfo']['UserInfoSearchCond']['maxResults']['@max']
             self.device.save()
+            success = True
         except requests.exceptions.RequestException as e:
             print(f'HTTP Request failed: {e}')
         finally:
             session.close()
-        return data
+        return success
 
     def get_schedule_template(self, plan_template_id):
         """
@@ -63,6 +65,7 @@ class DeviceAPIService:
         session = self._create_session()
         data = {}
         try:
+            
             response = session.get(url)
             response.raise_for_status()
             data = response.json()

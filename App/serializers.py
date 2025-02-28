@@ -13,9 +13,18 @@ from django.utils.translation import gettext_lazy as _  # если хотите 
 
 #Cериализаторы для работы с Device
 class   DeviceSerializer(serializers.ModelSerializer):
+    is_online = serializers.SerializerMethodField()
     class Meta:
         model  = Device
         fields = '__all__'
+    
+    def get_is_online(self, obj):
+        """
+        Будем брать предрасчитанное значение is_online из контекста,
+        который пробросим в ViewSet.
+        """
+        # Если объекта нет в словаре, возвращаем False по умолчанию
+        return self.context.get('is_online_map', {}).get(obj.pk, False)
 
 #Cериализаторы для работы с Person
 class ValidSerializer(serializers.Serializer):
@@ -258,6 +267,12 @@ class UserLoginSerializer(serializers.Serializer):
         return data
 
 class AccessEventSerializer(serializers.ModelSerializer):
+
+    # Пробрасываем название организации из связанного Device
+    organization_name = serializers.CharField(
+        source='device.organization.name',
+        read_only=True
+    )
     class Meta:
         model = AccessEvent
         fields = [
@@ -266,7 +281,7 @@ class AccessEventSerializer(serializers.ModelSerializer):
             'deviceName', 'majorEventType', 'subEventType', 'name', 'cardReaderKind',
             'cardReaderNo', 'verifyNo', 'employeeNoString', 'serialNo', 'userType',
             'currentVerifyMode', 'frontSerialNo', 'attendanceStatus', 'label',
-            'statusValue', 'mask', 'purePwdVerifyEnable'
+            'statusValue', 'mask', 'purePwdVerifyEnable', 'organization_name',
         ]
         read_only_fields = fields
 

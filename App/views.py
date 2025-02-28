@@ -60,8 +60,27 @@ class DeviceViewSet(viewsets.ModelViewSet):
             # Если нужно делать более тонкую проверку, то добавьте.
         
         return qs
-        # permission_classes = (IsAuthenticated,)
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
 
+        # Создадим карту {device_id: is_online}
+        is_online_map = {}
+        for device in queryset:
+            service = DeviceAPIService(device)
+            success = service.get_capabilities()  
+            if success:
+                is_online_map[device.pk] = True
+            else:
+                is_online_map[device.pk] = False
+
+        # Передаём is_online_map в контекст сериализатора
+        serializer = self.get_serializer(
+            queryset, many=True, 
+            context={'is_online_map': is_online_map}
+        )
+        return Response(serializer.data)
+    permission_classes = (IsAuthenticated,)
+ 
 
 # =============================================================================
 # (2) PERSON VIEWSET (вложенный в devices)
@@ -195,7 +214,6 @@ class FaceViewSet(viewsets.ViewSet):
 
         service = DeviceAPIService(device)
         response_data = service.get_face(face_lib_type, fdid, str(person_pk))
-        print('retrieve  response_data:', response_data)
         return Response(response_data)
 
     def update(self, request, device_pk=None, person_pk=None, pk=None):
@@ -259,7 +277,6 @@ class FaceViewSet(viewsets.ViewSet):
 
         service = DeviceAPIService(device)
         data = service.fetch_face_image(face_url)
-        print('fetch  data:',data)
         return Response(data)
 
 

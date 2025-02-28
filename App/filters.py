@@ -21,9 +21,12 @@ class AccessEventFilter(django_filters.FilterSet):
     eventType = django_filters.CharFilter(field_name='eventType', lookup_expr='icontains')
     name = django_filters.CharFilter(field_name='name', lookup_expr='icontains')
     employeeNoString = django_filters.CharFilter(field_name='employeeNoString', lookup_expr='icontains')
+    # Новое поле:
+    organization = django_filters.NumberFilter(field_name='device__organization', lookup_expr='exact')
+
 
     class Meta:
         model = AccessEvent
         # Поля, которые хотим разрешить для фильтрации.
         # Важно, чтобы совпадали с полями выше
-        fields = ['date_from', 'date_to', 'device', 'eventType', 'name', 'employeeNoString']
+        fields = ['date_from', 'date_to', 'device', 'eventType', 'name', 'employeeNoString', 'organization']
