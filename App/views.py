@@ -60,25 +60,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
             # Если нужно делать более тонкую проверку, то добавьте.
         
         return qs
-    def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
-
-        # Создадим карту {device_id: is_online}
-        is_online_map = {}
-        for device in queryset:
-            service = DeviceAPIService(device)
-            success = service.get_capabilities()  
-            if success:
-                is_online_map[device.pk] = True
-            else:
-                is_online_map[device.pk] = False
-
-        # Передаём is_online_map в контекст сериализатора
-        serializer = self.get_serializer(
-            queryset, many=True, 
-            context={'is_online_map': is_online_map}
-        )
-        return Response(serializer.data)
     permission_classes = (IsAuthenticated,)
  
 

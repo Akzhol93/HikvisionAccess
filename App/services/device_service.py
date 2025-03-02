@@ -65,7 +65,6 @@ class DeviceAPIService:
         session = self._create_session()
         data = {}
         try:
-            
             response = session.get(url)
             response.raise_for_status()
             data = response.json()

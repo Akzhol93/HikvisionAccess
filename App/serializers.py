@@ -13,18 +13,10 @@ from django.utils.translation import gettext_lazy as _  # если хотите 
 
 #Cериализаторы для работы с Device
 class   DeviceSerializer(serializers.ModelSerializer):
-    is_online = serializers.SerializerMethodField()
     class Meta:
         model  = Device
         fields = '__all__'
     
-    def get_is_online(self, obj):
-        """
-        Будем брать предрасчитанное значение is_online из контекста,
-        который пробросим в ViewSet.
-        """
-        # Если объекта нет в словаре, возвращаем False по умолчанию
-        return self.context.get('is_online_map', {}).get(obj.pk, False)
 
 #Cериализаторы для работы с Person
 class ValidSerializer(serializers.Serializer):
